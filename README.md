@@ -1,8 +1,10 @@
-# Bash Language Server
+# bash-language-server
 
-Bash language server that brings an IDE-like experience for bash scripts to most editors. This is based on the [Tree Sitter parser][tree-sitter-bash] and supports [explainshell][explainshell], [shellcheck][shellcheck] and [shfmt][shfmt].
+Bash language server maintained by lumine-code.
 
-Documentation around configuration variables can be found in the [config.ts](https://github.com/bash-lsp/bash-language-server/blob/main/server/src/config.ts) file.
+This is a source-maintained fork of [bash-lsp/bash-language-server](https://github.com/bash-lsp/bash-language-server). It brings an IDE-like experience to Bash scripts using the [Tree Sitter parser][tree-sitter-bash], with optional [explainshell][explainshell], [shellcheck][shellcheck], and [shfmt][shfmt] integration. The fork tracks the upstream server while keeping its dependency chain compatible with supported Lumine runtimes.
+
+Documentation around configuration variables can be found in [config.ts](https://github.com/lumine-code/bash-language-server/blob/master/server/src/config.ts).
 
 ## Features
 
@@ -41,7 +43,7 @@ Usually you want to install a client for your editor (see the section below).
 But if you want to install the server binary (for examples for editors, like helix, where a generic LSP client is built in), you can install from npm registry as:
 
 ```bash
-npm i -g bash-language-server
+npm i -g @lumine-code/bash-language-server
 ```
 
 Alternatively, bash-language-server may also be distributed directly by your Linux distro, for example on Fedora based distros:
@@ -62,7 +64,7 @@ To verify that everything is working:
 bash-language-server --help
 ```
 
-If you encounter installation errors, ensure you have node version 20 or newer (`node --version`).
+If you encounter installation errors, ensure you have Node.js 24 or newer (`node --version`).
 
 ### Clients
 
@@ -137,6 +139,7 @@ For Neovim 0.11+ with [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig)
 ```lua
 vim.lsp.enable 'bashls'
 ```
+
 For Neovim 0.11+ without plugins
 
 ```lua
@@ -148,6 +151,7 @@ vim.lsp.enable 'bashls'
 ```
 
 For Neovim 0.10 or lower with [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig)
+
 ```lua
 require 'lspconfig'.bashls.setup {}
 ```
@@ -204,7 +208,7 @@ the language server config by setting the "Ignore Editorconfig" configuration va
 ## Logging
 
 The minimum logging level for the server can be adjusted using the `BASH_IDE_LOG_LEVEL` environment variable
-and through the general [workspace configuration](https://github.com/bash-lsp/bash-language-server/blob/main/server/src/config.ts).
+and through the general [workspace configuration](https://github.com/lumine-code/bash-language-server/blob/master/server/src/config.ts).
 
 ## Development Guide
 
@@ -214,7 +218,7 @@ Please see [docs/development-guide][dev-guide] for more information.
 [tree-sitter-bash]: https://github.com/tree-sitter/tree-sitter-bash
 [vscode-marketplace]: https://marketplace.visualstudio.com/items?itemName=mads-hartmann.bash-ide-vscode
 [dev-guide]: https://github.com/bash-lsp/bash-language-server/blob/master/docs/development-guide.md
-[ide-bash]: https://atom.io/packages/ide-bash
+[ide-bash]: https://github.com/lumine-code/ide-bash
 [sublime-text-lsp]: https://packagecontrol.io/packages/LSP-bash
 [explainshell]: https://explainshell.com/
 [shellcheck]: https://www.shellcheck.net/

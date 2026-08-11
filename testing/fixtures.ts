@@ -1,5 +1,6 @@
 import * as fs from 'fs'
 import * as path from 'path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { TextDocument } from 'vscode-languageserver-textdocument'
 
 export const FIXTURE_FOLDER = path.join(__dirname, './fixtures/')
@@ -9,36 +10,32 @@ function getDocument(uri: string) {
     uri,
     'shellscript',
     0,
-    fs.readFileSync(uri.replace('file://', ''), 'utf8'),
+    fs.readFileSync(fileURLToPath(uri), 'utf8'),
   )
 }
 
 type FIXTURE_KEY = keyof typeof FIXTURE_URI
 
 export const FIXTURE_URI = {
-  COMMENT_DOC: `file://${path.join(FIXTURE_FOLDER, 'comment-doc-on-hover.sh')}`,
-  CRASH: `file://${path.join(FIXTURE_FOLDER, 'crash.zsh')}`,
-  INSTALL: `file://${path.join(FIXTURE_FOLDER, 'install.sh')}`,
-  ISSUE101: `file://${path.join(FIXTURE_FOLDER, 'issue101.sh')}`,
-  ISSUE206: `file://${path.join(FIXTURE_FOLDER, 'issue206.sh')}`,
-  MISSING_EXTENSION: `file://${path.join(FIXTURE_FOLDER, 'extension')}`,
-  EXTENSION_INC: `file://${path.join(FIXTURE_FOLDER, 'extension.inc')}`,
-  MISSING_NODE: `file://${path.join(FIXTURE_FOLDER, 'missing-node.sh')}`,
-  OPTIONS: `file://${path.join(FIXTURE_FOLDER, 'options.sh')}`,
-  OVERRIDE_SYMBOL: `file://${path.join(FIXTURE_FOLDER, 'override-executable-symbol.sh')}`,
-  PARSE_PROBLEMS: `file://${path.join(FIXTURE_FOLDER, 'parse-problems.sh')}`,
-  SCOPE: `file://${path.join(FIXTURE_FOLDER, 'scope.sh')}`,
-  SHELLCHECK_SOURCE: `file://${path.join(FIXTURE_FOLDER, 'shellcheck', 'source.sh')}`,
-  SHELLCHECK_SHELL_DIRECTIVE: `file://${path.join(
-    FIXTURE_FOLDER,
-    'shellcheck',
-    'shell-directive.bash',
-  )}`,
-  SHFMT: `file://${path.join(FIXTURE_FOLDER, 'shfmt.sh')}`,
-  SOURCING: `file://${path.join(FIXTURE_FOLDER, 'sourcing.sh')}`,
-  SOURCING2: `file://${path.join(FIXTURE_FOLDER, 'sourcing2.sh')}`,
-  RENAMING: `file://${path.join(FIXTURE_FOLDER, 'renaming.sh')}`,
-  RENAMING_READ: `file://${path.join(FIXTURE_FOLDER, 'renaming-read.sh')}`,
+  COMMENT_DOC: fixtureUri('comment-doc-on-hover.sh'),
+  CRASH: fixtureUri('crash.zsh'),
+  INSTALL: fixtureUri('install.sh'),
+  ISSUE101: fixtureUri('issue101.sh'),
+  ISSUE206: fixtureUri('issue206.sh'),
+  MISSING_EXTENSION: fixtureUri('extension'),
+  EXTENSION_INC: fixtureUri('extension.inc'),
+  MISSING_NODE: fixtureUri('missing-node.sh'),
+  OPTIONS: fixtureUri('options.sh'),
+  OVERRIDE_SYMBOL: fixtureUri('override-executable-symbol.sh'),
+  PARSE_PROBLEMS: fixtureUri('parse-problems.sh'),
+  SCOPE: fixtureUri('scope.sh'),
+  SHELLCHECK_SOURCE: fixtureUri('shellcheck', 'source.sh'),
+  SHELLCHECK_SHELL_DIRECTIVE: fixtureUri('shellcheck', 'shell-directive.bash'),
+  SHFMT: fixtureUri('shfmt.sh'),
+  SOURCING: fixtureUri('sourcing.sh'),
+  SOURCING2: fixtureUri('sourcing2.sh'),
+  RENAMING: fixtureUri('renaming.sh'),
+  RENAMING_READ: fixtureUri('renaming-read.sh'),
 }
 
 export const FIXTURE_DOCUMENT: Record<FIXTURE_KEY, TextDocument> = (
@@ -49,6 +46,11 @@ export const FIXTURE_DOCUMENT: Record<FIXTURE_KEY, TextDocument> = (
 }, {} as any)
 
 export const REPO_ROOT_FOLDER = path.resolve(path.join(FIXTURE_FOLDER, '../..'))
+const REPO_ROOT_URI = pathToFileURL(REPO_ROOT_FOLDER).href.replace(/\/$/, '')
+
+function fixtureUri(...segments: string[]): string {
+  return pathToFileURL(path.join(FIXTURE_FOLDER, ...segments)).href
+}
 
 export function updateSnapshotUris<
   T extends Record<string, any> | Array<any> | null | undefined,
@@ -62,7 +64,7 @@ export function updateSnapshotUris<
     if (typeof data === 'object') {
       if (data.changes) {
         for (const key in data.changes) {
-          data.changes[key.replace(REPO_ROOT_FOLDER, '__REPO_ROOT_FOLDER__')] =
+          data.changes[key.replace(REPO_ROOT_URI, 'file://__REPO_ROOT_FOLDER__')] =
             data.changes[key]
           delete data.changes[key]
         }
@@ -71,7 +73,7 @@ export function updateSnapshotUris<
       }
 
       if (data.uri) {
-        data.uri = data.uri.replace(REPO_ROOT_FOLDER, '__REPO_ROOT_FOLDER__')
+        data.uri = data.uri.replace(REPO_ROOT_URI, 'file://__REPO_ROOT_FOLDER__')
       }
       Object.values(data).forEach((child) => {
         if (Array.isArray(child)) {

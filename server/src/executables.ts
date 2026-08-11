@@ -1,5 +1,5 @@
 import * as fs from 'fs'
-import { basename, join } from 'path'
+import { basename, delimiter, extname, join } from 'node:path'
 
 import * as ArrayUtil from './util/array'
 import * as FsUtil from './util/fs'
@@ -15,10 +15,10 @@ export default class Executables {
   }
 
   /**
-   * @param path is expected to to be a ':' separated list of paths.
+   * @param pathValue is expected to use the platform PATH delimiter.
    */
-  public static fromPath(path: string): Promise<Executables> {
-    const paths = path.split(':')
+  public static fromPath(pathValue: string): Promise<Executables> {
+    const paths = pathValue.split(delimiter)
     const promises = paths.map((x) => findExecutablesInPath(x))
     return Promise.all(promises)
       .then(ArrayUtil.flattenArray)
@@ -59,18 +59,18 @@ async function findExecutablesInPath(path: string): Promise<string[]> {
         try {
           const stats = await fs.promises.lstat(join(path, childrenPath))
           if (isExecutableFile(stats)) {
-            files.push(basename(childrenPath))
+            files.push(executableName(childrenPath))
           }
-        } catch (error) {
+        } catch {
           // Ignore error
         }
       }
 
       return files
     } else if (isExecutableFile(pathStats)) {
-      return [basename(path)]
+      return [executableName(path)]
     }
-  } catch (error) {
+  } catch {
     // Ignore error
   }
 
@@ -78,6 +78,27 @@ async function findExecutablesInPath(path: string): Promise<string[]> {
 }
 
 function isExecutableFile(stats: fs.Stats): boolean {
+  if (process.platform === 'win32') {
+    return stats.isFile()
+  }
+
   const isExecutable = !!(1 & parseInt((stats.mode & parseInt('777', 8)).toString(8)[0]))
   return stats.isFile() && isExecutable
+}
+
+function executableName(filePath: string): string {
+  const name = basename(filePath)
+  if (process.platform !== 'win32') {
+    return name
+  }
+
+  const extension = extname(name)
+  const executableExtensions = new Set(
+    (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD')
+      .split(';')
+      .map((value) => value.toLowerCase()),
+  )
+  return executableExtensions.has(extension.toLowerCase())
+    ? name.slice(0, -extension.length)
+    : name
 }

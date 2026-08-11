@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 import * as LSP from 'vscode-languageserver'
 
 import { getMockConnection } from '../../../../testing/mocks'

@@ -166,7 +166,7 @@ export default class Analyzer {
     const lookupStartTime = Date.now()
     const getTimePassed = (): string => `${(Date.now() - lookupStartTime) / 1000} seconds`
 
-    let filePaths: string[] = []
+    let filePaths: string[]
     try {
       filePaths = await getFilePaths({
         globPattern,
@@ -720,8 +720,9 @@ export default class Analyzer {
 
     // iterate on every line above and including
     // the current line until getComment returns null
-    let currentComment: string | null = ''
-    while ((currentComment = getComment(currentLine)) !== null) {
+    while (true) {
+      const currentComment = getComment(currentLine)
+      if (currentComment === null) break
       commentBlock.push(currentComment)
       commentBlockIndex -= 1
       currentLine = doc.getText({

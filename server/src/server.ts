@@ -210,9 +210,8 @@ export default class BashServer {
         }
 
         // get current configuration from client
-        const configObject = await connection.workspace.getConfiguration(
-          CONFIGURATION_SECTION,
-        )
+        const configObject =
+          await connection.workspace.getConfiguration(CONFIGURATION_SECTION)
         this.updateConfiguration(configObject)
         logger.debug('Configuration loaded from client')
       }
@@ -607,7 +606,7 @@ export default class BashServer {
             documentation: getMarkdownContent(documentation, 'man'),
           }
         : item
-    } catch (error) {
+    } catch {
       return item
     }
   }
@@ -945,15 +944,15 @@ function symbolKindToDescription(s: LSP.SymbolKind): string {
 function getMarkdownContent(documentation: string, language?: string): LSP.MarkupContent {
   return {
     value: language
-      ? // eslint-disable-next-line prefer-template
-        ['``` ' + language, documentation, '```'].join('\n')
+      ? [`\`\`\` ${language}`, documentation, '```'].join('\n')
       : documentation,
     kind: LSP.MarkupKind.Markdown,
   }
 }
 
 export function getCommandOptions(name: string, word: string): string[] {
-  const options = spawnSync(path.join(__dirname, './get-options.sh'), [name, word])
+  const optionsScript = path.join(__dirname, './get-options.sh')
+  const options = spawnSync('bash', [optionsScript, name, word])
 
   if (options.status !== 0) {
     return []

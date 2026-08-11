@@ -1,5 +1,6 @@
 import * as fs from 'fs'
 import * as path from 'path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as LSP from 'vscode-languageserver'
 import * as Parser from 'web-tree-sitter'
 
@@ -30,7 +31,10 @@ export function getSourceCommands({
 }): SourceCommand[] {
   const sourceCommands: SourceCommand[] = []
 
-  const rootPaths = [path.dirname(fileUri), rootPath].filter(Boolean) as string[]
+  const rootPaths = [
+    path.dirname(toFilePath(fileUri)),
+    rootPath && toFilePath(rootPath),
+  ].filter(Boolean) as string[]
 
   TreeSitterUtil.forEach(tree.rootNode, (node) => {
     const sourcedPathInfo = getSourcedPathInfoFromNode({ node })
@@ -164,24 +168,36 @@ function resolveSourcedUri({
     sourcedPath = untildify(sourcedPath)
   }
 
-  if (sourcedPath.startsWith('/')) {
+  if (path.isAbsolute(sourcedPath)) {
     if (fs.existsSync(sourcedPath)) {
-      return `file://${sourcedPath}`
+      return toFileUri(sourcedPath)
     }
     return null
   }
 
   // resolve  relative path
   for (const rootPath of rootPaths) {
-    const potentialPath = path.join(rootPath.replace('file://', ''), sourcedPath)
+    const potentialPath = path.join(rootPath, sourcedPath)
 
     // check if path is a file
     if (fs.existsSync(potentialPath)) {
-      return `file://${potentialPath}`
+      return toFileUri(potentialPath)
     }
   }
 
   return null
+}
+
+function toFilePath(pathOrUri: string): string {
+  return pathOrUri.startsWith('file:') ? fileURLToPath(pathOrUri) : pathOrUri
+}
+
+function toFileUri(filePath: string): string {
+  // Preserve POSIX-style absolute paths in platform-independent analysis and tests.
+  if (/^[\\/](?![\\/])/.test(filePath)) {
+    return `file:///${filePath.slice(1).replaceAll('\\', '/')}`
+  }
+  return pathToFileURL(filePath).href
 }
 
 /*

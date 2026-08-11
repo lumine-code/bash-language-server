@@ -1,5 +1,7 @@
 import * as fs from 'fs'
 import * as os from 'os'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import * as Parser from 'web-tree-sitter'
 
 import { REPO_ROOT_FOLDER } from '../../../../testing/fixtures'
@@ -196,11 +198,12 @@ describe('getSourcedUris', () => {
 
     expect(sourcedUris).toEqual(
       new Set([
-        `file://${REPO_ROOT_FOLDER}/scripts/release-client.sh`,
-        `file://${REPO_ROOT_FOLDER}/testing/fixtures/issue206.sh`,
-        `file://${REPO_ROOT_FOLDER}/testing/fixtures/missing-node.sh`,
-        `file://${REPO_ROOT_FOLDER}/testing/fixtures/install.sh`,
-        `file://${REPO_ROOT_FOLDER}/testing/fixtures/issue101.sh`,
+        pathToFileURL(join(REPO_ROOT_FOLDER, 'scripts', 'release-client.sh')).href,
+        pathToFileURL(join(REPO_ROOT_FOLDER, 'testing', 'fixtures', 'issue206.sh')).href,
+        pathToFileURL(join(REPO_ROOT_FOLDER, 'testing', 'fixtures', 'missing-node.sh'))
+          .href,
+        pathToFileURL(join(REPO_ROOT_FOLDER, 'testing', 'fixtures', 'install.sh')).href,
+        pathToFileURL(join(REPO_ROOT_FOLDER, 'testing', 'fixtures', 'issue101.sh')).href,
       ]),
     )
 

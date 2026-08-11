@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import {
@@ -16,7 +17,7 @@ import { Logger } from '../util/logger'
 const CURRENT_URI = 'dummy-uri.sh'
 
 // if you add a .sh file to testing/fixtures, update this value
-const FIXTURE_FILES_MATCHING_GLOB = 20
+const FIXTURE_FILES_MATCHING_GLOB = process.platform === 'win32' ? 21 : 20
 
 const defaultConfig = getDefaultConfiguration()
 
@@ -375,9 +376,9 @@ describe('findAllSourcedUris', () => {
     const result = analyzer.findAllSourcedUris({ uri: FIXTURE_URI.SOURCING })
     expect(result).toEqual(
       new Set([
-        `file://${REPO_ROOT_FOLDER}/scripts/tag-release.inc`, // resolved based on repoRootFolder
-        `file://${FIXTURE_FOLDER}issue101.sh`, // resolved based on current file
-        `file://${FIXTURE_FOLDER}extension.inc`, // resolved based on current file
+        pathToFileURL(join(REPO_ROOT_FOLDER, 'scripts', 'tag-release.inc')).href,
+        pathToFileURL(join(FIXTURE_FOLDER, 'issue101.sh')).href,
+        pathToFileURL(join(FIXTURE_FOLDER, 'extension.inc')).href,
       ]),
     )
   })
@@ -394,8 +395,8 @@ describe('findAllSourcedUris', () => {
     const result = analyzer.findAllSourcedUris({ uri: FIXTURE_URI.MISSING_EXTENSION })
     expect(result).toEqual(
       new Set([
-        `file://${FIXTURE_FOLDER}extension.inc`,
-        `file://${FIXTURE_FOLDER}issue101.sh`,
+        pathToFileURL(join(FIXTURE_FOLDER, 'extension.inc')).href,
+        pathToFileURL(join(FIXTURE_FOLDER, 'issue101.sh')).href,
       ]),
     )
   })

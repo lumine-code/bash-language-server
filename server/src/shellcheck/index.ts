@@ -191,6 +191,7 @@ export class Linter {
       }
       throw new Error(
         `ShellCheck: failed with code ${exit}: ${e}\nout:\n${out}\nerr:\n${err}`,
+        { cause: e },
       )
     }
 
@@ -200,6 +201,7 @@ export class Linter {
     } catch (e) {
       throw new Error(
         `ShellCheck: json parse failed with error ${e}\nout:\n${out}\nerr:\n${err}`,
+        { cause: e },
       )
     }
 

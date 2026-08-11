@@ -120,15 +120,16 @@ export function formatManOutput(manOutput: string): string {
 /**
  * Only works for one-parameter (serializable) functions.
  */
-/* eslint-disable @typescript-eslint/ban-types */
-export function memorize<T extends Function>(func: T): T {
-  const cache = new Map()
+export function memorize<TArgument, TResult>(
+  func: (argument: TArgument) => Promise<TResult>,
+): (argument: TArgument) => Promise<TResult> {
+  const cache = new Map<string, TResult>()
 
-  const returnFunc = async function (arg: any) {
+  return async function (arg: TArgument): Promise<TResult> {
     const cacheKey = JSON.stringify(arg)
 
     if (cache.has(cacheKey)) {
-      return cache.get(cacheKey)
+      return cache.get(cacheKey)!
     }
 
     const result = await func(arg)
@@ -136,8 +137,6 @@ export function memorize<T extends Function>(func: T): T {
     cache.set(cacheKey, result)
     return result
   }
-
-  return returnFunc as any
 }
 
 export const getShellDocumentation = memorize(getShellDocumentationWithoutCache)

@@ -174,7 +174,7 @@ export class Formatter {
         this._canFormat = false
         return ''
       }
-      throw new Error(`Shfmt: child process error: ${e}`)
+      throw new Error(`Shfmt: child process error: ${e}`, { cause: e })
     }
 
     if (exit != 0) {

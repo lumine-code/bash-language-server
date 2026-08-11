@@ -1,46 +1,74 @@
 {
-  "private": true,
+  "name": "@lumine-code/bash-language-server",
+  "author": "lumine-code",
+  "version": "6.0.0",
+  "description": "Bash language server maintained by lumine-code.",
+  "license": "MIT",
+  "main": "./server/out/server.js",
+  "types": "./server/out/server.d.ts",
+  "bin": {
+    "bash-language-server": "server/out/cli.js"
+  },
+  "files": [
+    "server/out"
+  ],
   "scripts": {
-    "clean": "rm -rf *.log */*.log */out node_modules vscode-client/node_modules server/node_modules",
-    "preinstall": "npx only-allow pnpm",
-    "compile": "tsc -b && cp server/src/get-options.sh server/out/",
-    "watch": "tsc -b -w",
-    "lint": "pnpm lint:bail --fix",
-    "lint:bail": "eslint . --ext js,ts,tsx --cache",
+    "build": "tsc -p server/tsconfig.json && node -e \"require('node:fs').copyFileSync('server/src/get-options.sh', 'server/out/get-options.sh')\" && prettier --write \"server/out/**/*.js\"",
     "test": "jest --runInBand",
-    "test:coverage": "pnpm run test --coverage",
-    "test:watch": "pnpm run test --watch",
-    "verify": "pnpm lint && pnpm compile && pnpm run test",
-    "verify:bail": "pnpm lint:bail && pnpm compile && pnpm test:coverage",
-    "reinstall-server": "npm uninstall -g bash-language-server && pnpm compile && npm i -g ./server",
-    "link-server": "npm uninstall -g bash-language-server && pnpm compile && pnpm unlink --dir=vscode-client bash-language-server && cd server && pnpm link . && cd ../vscode-client && pnpm link bash-language-server",
-    "postinstall": "pnpm --dir=vscode-client install --ignore-workspace"
+    "test:portable": "jest --runInBand --testPathIgnorePatterns=\"server/src/__tests__/server.test.ts|server/src/shellcheck/__tests__/index.test.ts|server/src/shfmt/__tests__/index.test.ts|server/src/util/__tests__/sh.test.ts\"",
+    "test:coverage": "jest --runInBand --coverage",
+    "lint": "eslint server/src eslint.config.js --max-warnings 0",
+    "format": "prettier --write package.json tsconfig.json server/tsconfig.json server/src eslint.config.js .github README.md CHANGELOG.md",
+    "format:check": "prettier --check package.json tsconfig.json server/tsconfig.json server/src eslint.config.js .github README.md CHANGELOG.md",
+    "verify": "npm run lint && npm run format:check && npm test && npm run build && npm pack --dry-run"
   },
-  "devDependencies": {
-    "@types/jest": "29.5.14",
-    "@types/node": "22.15.29",
-    "@typescript-eslint/eslint-plugin": "7.18.0",
-    "@typescript-eslint/parser": "7.18.0",
-    "cross-spawn": ">=7.0.5",
-    "eslint": "8.57.1",
-    "eslint-config-prettier": "9.1.2",
-    "eslint-plugin-jest": "28.14.0",
-    "eslint-plugin-prettier": "4.2.5",
-    "eslint-plugin-simple-import-sort": "12.1.1",
-    "eslint-plugin-sort-class-members": "1.21.0",
-    "jest": "29.7.0",
-    "prettier": "2.8.8",
-    "ts-jest": "29.4.5",
-    "typescript": "5.9.3",
-    "vscode-languageserver": "8.0.2",
-    "vscode-languageserver-textdocument": "1.0.12"
+  "repository": "https://github.com/lumine-code/bash-language-server",
+  "bugs": {
+    "url": "https://github.com/lumine-code/bash-language-server/issues"
   },
-  "resolutions": {
-    "@types/vscode": "1.106.1"
+  "homepage": "https://github.com/lumine-code/bash-language-server#readme",
+  "publishConfig": {
+    "access": "public"
   },
   "engines": {
-    "node": ">=20",
-    "pnpm": ">=10"
+    "node": ">=24"
+  },
+  "keywords": [
+    "bash",
+    "shell",
+    "language-server",
+    "lsp",
+    "shellcheck",
+    "shfmt",
+    "lumine"
+  ],
+  "dependencies": {
+    "editorconfig": "3.0.2",
+    "fast-glob": "3.3.3",
+    "fuzzy-search": "3.2.1",
+    "node-fetch": "2.7.0",
+    "turndown": "7.2.2",
+    "vscode-languageserver": "8.0.2",
+    "vscode-languageserver-textdocument": "1.0.12",
+    "web-tree-sitter": "0.24.5",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/fuzzy-search": "2.1.5",
+    "@types/jest": "30.0.0",
+    "@types/node": "^24.10.0",
+    "@types/node-fetch": "2.6.13",
+    "@types/turndown": "5.0.6",
+    "@types/urijs": "1.19.26",
+    "eslint": "^10.8.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.9.0",
+    "jest": "30.4.2",
+    "prettier": "^3.9.6",
+    "ts-jest": "29.4.12",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.67.0"
   },
   "jest": {
     "preset": "ts-jest",
@@ -65,12 +93,11 @@
       ]
     },
     "testMatch": [
-      "<rootDir>/**/__tests__/*.ts"
+      "<rootDir>/server/src/**/__tests__/*.ts"
     ],
     "collectCoverageFrom": [
-      "**/*.ts",
-      "!**/__test__/*",
-      "!testing/*"
+      "server/src/**/*.ts",
+      "!server/src/**/__tests__/**"
     ],
     "coverageReporters": [
       "text-summary",

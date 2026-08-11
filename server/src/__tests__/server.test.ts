@@ -303,7 +303,6 @@ describe('server', () => {
     it('responds to onCompletion with options list when command name is found', async () => {
       if (getCommandOptions('find', '-').length === 0) {
         // This might not work on all systems
-        // eslint-disable-next-line no-console
         console.warn('Skipping onCompletion test as getCommandOptions failed')
         return
       }

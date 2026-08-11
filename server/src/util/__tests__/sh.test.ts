@@ -1,4 +1,3 @@
-/* eslint-disable no-useless-escape */
 import * as sh from '../sh'
 
 describe('execShellScript', () => {

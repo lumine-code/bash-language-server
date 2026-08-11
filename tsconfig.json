@@ -1,32 +1,15 @@
 {
   "compilerOptions": {
-    "noImplicitAny": true,
-    "noImplicitReturns": true,
-    "strict": true,
-    "target": "es6",
+    "declaration": true,
+    "lib": ["dom", "es2022"],
     "module": "commonjs",
     "moduleResolution": "node",
-    "declaration": true,
-    "lib": [
-      "es2016"
-    ],
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
     "rootDir": ".",
-    "sourceMap": true,
     "skipLibCheck": true,
-  },
-  "include": [
-    "testing"
-  ],
-  "exclude": [
-    "node_modules",
-    "**/__tests__/*",
-    "vscode-client/out",
-    "server/out",
-    "server/setupJest.ts",
-    "testing"
-  ],
-  "references": [
-    { "path": "./vscode-client" },
-    { "path": "./server" }
-  ]
+    "sourceMap": true,
+    "strict": true,
+    "target": "es2022"
+  }
 }
