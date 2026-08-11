@@ -10,17 +10,19 @@
     "bash-language-server": "server/out/cli.js"
   },
   "files": [
-    "server/out"
+    "server/out",
+    "server/tree-sitter-bash.wasm"
   ],
   "scripts": {
     "build": "tsc -p server/tsconfig.json && node -e \"require('node:fs').copyFileSync('server/src/get-options.sh', 'server/out/get-options.sh')\" && prettier --write \"server/out/**/*.js\"",
     "test": "jest --runInBand",
     "test:portable": "jest --runInBand --testPathIgnorePatterns=\"server/src/__tests__/server.test.ts|server/src/shellcheck/__tests__/index.test.ts|server/src/shfmt/__tests__/index.test.ts|server/src/util/__tests__/sh.test.ts\"",
     "test:coverage": "jest --runInBand --coverage",
-    "lint": "eslint server/src eslint.config.js --max-warnings 0",
-    "format": "prettier --write package.json tsconfig.json server/tsconfig.json server/src eslint.config.js .github README.md CHANGELOG.md",
-    "format:check": "prettier --check package.json tsconfig.json server/tsconfig.json server/src eslint.config.js .github README.md CHANGELOG.md",
-    "verify": "npm run lint && npm run format:check && npm test && npm run build && npm pack --dry-run"
+    "lint": "eslint server/src scripts/*.js eslint.config.js --max-warnings 0",
+    "format": "prettier --write package.json tsconfig.json server/tsconfig.json server/src scripts/*.js eslint.config.js .github README.md CHANGELOG.md",
+    "format:check": "prettier --check package.json tsconfig.json server/tsconfig.json server/src scripts/*.js eslint.config.js .github README.md CHANGELOG.md",
+    "verify": "npm run lint && npm run format:check && npm test && npm run build && npm run verify:package",
+    "verify:package": "node scripts/verify-package.js"
   },
   "repository": "https://github.com/lumine-code/bash-language-server",
   "bugs": {

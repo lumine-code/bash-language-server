@@ -27,7 +27,7 @@ module.exports = tseslint.config(
     },
   },
   {
-    files: ['eslint.config.js'],
+    files: ['eslint.config.js', 'scripts/**/*.js'],
     languageOptions: {
       globals: globals.node,
     },
