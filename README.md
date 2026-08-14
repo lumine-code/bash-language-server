@@ -27,14 +27,9 @@ To be implemented:
 
 ### Dependencies
 
-As a dependency, we recommend that you first install [shellcheck][shellcheck] to enable linting:
-https://github.com/koalaman/shellcheck#installing . If `shellcheck` is installed,
-bash-language-server will automatically call it to provide linting and code analysis each time the
-file is updated (with debounce time of 500ms).
+As a dependency, we recommend that you first install [shellcheck][shellcheck] to enable linting: https://github.com/koalaman/shellcheck#installing . If `shellcheck` is installed, bash-language-server will automatically call it to provide linting and code analysis each time the file is updated (with debounce time of 500ms).
 
-If you want your shell scripts to be formatted consistently, you can install [shfmt][shfmt]. If
-`shfmt` is installed then your documents will be formatted whenever you take the 'format document'
-action. In most editors this can be configured to happen automatically when files are saved.
+If you want your shell scripts to be formatted consistently, you can install [shfmt][shfmt]. If `shfmt` is installed then your documents will be formatted whenever you take the 'format document' action. In most editors this can be configured to happen automatically when files are saved.
 
 ### Bash language server
 
@@ -121,8 +116,7 @@ For Vim 8 or Neovim using [neoclide/coc.nvim][coc.nvim], according to [it's Wiki
   }
 ```
 
-For Vim 8 or NeoVim using [dense-analysis/ale][vim-ale] add the following
-configuration to your `.vimrc`:
+For Vim 8 or NeoVim using [dense-analysis/ale][vim-ale] add the following configuration to your `.vimrc`:
 
 ```vim
 let g:ale_linters = {
@@ -167,8 +161,7 @@ On the config file (`File -> Preferences -> Edit Oni config`) add the following 
 
 #### Emacs
 
-[Lsp-mode](https://github.com/emacs-lsp/lsp-mode) has a built-in client, can be installed by `use-package`.
-Add the configuration to your `.emacs.d/init.el`
+[Lsp-mode](https://github.com/emacs-lsp/lsp-mode) has a built-in client, can be installed by `use-package`. Add the configuration to your `.emacs.d/init.el`
 
 ```emacs-lisp
 (use-package lsp-mode
@@ -191,24 +184,13 @@ Using the built-in `eglot` lsp mode:
 
 ## `shfmt` integration
 
-The indentation used by `shfmt` is whatever has been configured for the current editor session, so
-there is no `shfmt`-specific configuration variable for this. If your editor is configured for
-two-space indents then that's what it will use. If you're using tabs for indentation then `shfmt`
-will use that.
+The indentation used by `shfmt` is whatever has been configured for the current editor session, so there is no `shfmt`-specific configuration variable for this. If your editor is configured for two-space indents then that's what it will use. If you're using tabs for indentation then `shfmt` will use that.
 
-The `shfmt` integration also supports configuration via `.editorconfig`. If any `shfmt`-specific
-configuration properties are found in `.editorconfig` then the config in `.editorconfig` will be
-used and the language server config will be ignored. This follows `shfmt`'s approach of using either
-`.editorconfig` or command line flags, but not both. Note that only `shfmt`-specific configuration
-properties are read from `.editorconfig` - indentation preferences are still provided by the editor,
-so to format using the indentation specified in `.editorconfig` make sure your editor is also
-configured to read `.editorconfig`. It is possible to disable `.editorconfig` support and always use
-the language server config by setting the "Ignore Editorconfig" configuration variable.
+The `shfmt` integration also supports configuration via `.editorconfig`. If any `shfmt`-specific configuration properties are found in `.editorconfig` then the config in `.editorconfig` will be used and the language server config will be ignored. This follows `shfmt`'s approach of using either `.editorconfig` or command line flags, but not both. Note that only `shfmt`-specific configuration properties are read from `.editorconfig` - indentation preferences are still provided by the editor, so to format using the indentation specified in `.editorconfig` make sure your editor is also configured to read `.editorconfig`. It is possible to disable `.editorconfig` support and always use the language server config by setting the "Ignore Editorconfig" configuration variable.
 
 ## Logging
 
-The minimum logging level for the server can be adjusted using the `BASH_IDE_LOG_LEVEL` environment variable
-and through the general [workspace configuration](https://github.com/lumine-code/bash-language-server/blob/master/server/src/config.ts).
+The minimum logging level for the server can be adjusted using the `BASH_IDE_LOG_LEVEL` environment variable and through the general [workspace configuration](https://github.com/lumine-code/bash-language-server/blob/master/server/src/config.ts).
 
 ## Development Guide
 

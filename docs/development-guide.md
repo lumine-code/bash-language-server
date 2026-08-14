@@ -2,14 +2,11 @@
 
 There are two moving parts.
 
-- **Server**: A node server written in Typescript that implements the
-  [Language Server Protocol (LSP)][lsp].
+- **Server**: A node server written in Typescript that implements the [Language Server Protocol (LSP)][lsp].
 
 **Client**: A Visual Studio Code (vscode) extension which wraps the LSP server.
 
-The project has a root `package.json` file which is really just there for
-convenience - it proxies to the `package.json` files in the `vscode-client` and
-`server` folders.
+The project has a root `package.json` file which is really just there for convenience - it proxies to the `package.json` files in the `vscode-client` and `server` folders.
 
 ## Prerequisites
 
@@ -26,18 +23,15 @@ Run the following in the root of the project
 pnpm install
 ```
 
-This uses the `postinstall` hook to install the dependencies in each of the
-sub-projects.
+This uses the `postinstall` hook to install the dependencies in each of the sub-projects.
 
-To make sure that everything is configured correctly run the following command
-to compile both the client and the server once
+To make sure that everything is configured correctly run the following command to compile both the client and the server once
 
 ```
 pnpm compile
 ```
 
-Now, depending on which part you want to work on follow the relevant section
-below.
+Now, depending on which part you want to work on follow the relevant section below.
 
 ## Development Tools
 
@@ -52,20 +46,15 @@ To support a good develop workflow we set up [eslint][eslint], [Prettier][pretti
 
 ### Visual Studio Code
 
-Working on the client is simply a matter of starting vscode and using the Debug
-View to launch the `Launch Client` task. This will open a new vscode window with the
-extension loaded. It also looks for changes to your client code and recompiles
-it whenever you save your changes.
+Working on the client is simply a matter of starting vscode and using the Debug View to launch the `Launch Client` task. This will open a new vscode window with the extension loaded. It also looks for changes to your client code and recompiles it whenever you save your changes.
 
 ### Atom
 
-See the [ide-bash][ide-bash] package for Atom. Due to how Atom packages are
-published the client lives in a separate repository.
+See the [ide-bash][ide-bash] package for Atom. Due to how Atom packages are published the client lives in a separate repository.
 
 ## Working on the server (VS Code)
 
-As the server is embedded into the VS Code client, you can link any server
-changes into the local installation of your VS Code client by running this once:
+As the server is embedded into the VS Code client, you can link any server changes into the local installation of your VS Code client by running this once:
 
 ```
 pnpm link-server
@@ -75,16 +64,13 @@ After that follow the steps above to work on the client.
 
 ## Working on the server (standalone)
 
-If you are working on the server outside of VS Code, then simply compile
-and install the server globally whenever you've made a change, and then
-reload your vscode window to re-launch the server.
+If you are working on the server outside of VS Code, then simply compile and install the server globally whenever you've made a change, and then reload your vscode window to re-launch the server.
 
 ```
 pnpm reinstall-server
 ```
 
-If you for some reason cannot get access to logs through the client,
-then you can hack the `server/util/logger` with:
+If you for some reason cannot get access to logs through the client, then you can hack the `server/util/logger` with:
 
 ```typescript
 const fs = require('fs')
