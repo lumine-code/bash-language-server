@@ -1,8 +1,7 @@
-import * as fs from 'fs'
-import * as os from 'os'
+import type * as fs from 'fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import * as Parser from 'web-tree-sitter'
+import { Parser } from 'web-tree-sitter'
 
 import { REPO_ROOT_FOLDER } from '../../../../testing/fixtures'
 import { initializeParser } from '../../parser'
@@ -16,8 +15,29 @@ beforeAll(async () => {
   parser = await initializeParser()
 })
 
-// mock os.homedir() to return a fixed path
-jest.spyOn(os, 'homedir').mockImplementation(() => '/Users/bash-user')
+beforeEach(() => {
+  mockExistsSync.mockImplementation(jest.requireActual<typeof fs>('fs').existsSync)
+})
+
+// Under node16 resolution a namespace import is compiled to a fresh copy of the
+// module's exports, so spying on the real module is no longer something the code
+// under test can see. Replace the modules in the registry instead.
+//
+// Fix the home directory the code under test reads; it imports `node:os`.
+jest.mock('node:os', () => ({
+  ...jest.requireActual('node:os'),
+  homedir: () => '/Users/bash-user',
+}))
+
+// `existsSync` answers differently per test, so it stays a jest.fn the tests
+// drive. The `mock` prefix is what lets the factory close over it. It answers
+// for real unless a test says otherwise — most of them read fixtures that are
+// genuinely on disk.
+const mockExistsSync = jest.fn<boolean, [fs.PathLike]>()
+jest.mock('fs', () => ({
+  ...jest.requireActual('fs'),
+  existsSync: (path: fs.PathLike) => mockExistsSync(path),
+}))
 
 describe('getSourcedUris', () => {
   it('returns an empty set if no files were sourced', () => {
@@ -31,7 +51,7 @@ describe('getSourcedUris', () => {
   })
 
   it('returns a set of sourced files (but ignores some unhandled cases)', () => {
-    jest.spyOn(fs, 'existsSync').mockImplementation(() => true)
+    mockExistsSync.mockImplementation(() => true)
 
     const fileContent = `
       source file-in-path.sh # does not contain a slash (i.e. is maybe somewhere on the path)

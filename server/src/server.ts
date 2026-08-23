@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process'
 import * as path from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 
-import * as TurndownService from 'turndown'
+import TurndownService from 'turndown'
 import * as LSP from 'vscode-languageserver/node'
 import { TextDocument } from 'vscode-languageserver-textdocument'
 
@@ -38,6 +38,10 @@ export default class BashServer {
   private linter?: Linter
   private formatter?: Formatter
   private workspaceFolder: string | null
+  // A notification carries no response, so the background pass cannot be handed
+  // back from `onInitialized`. Callers that need to wait for it — the specs —
+  // read it here instead.
+  public backgroundAnalysisCompleted: Promise<{ filesParsed: number }> | null = null
   private uriToCodeActions: {
     [uri: string]: LintingResult['codeActions'] | undefined
   } = {}
@@ -224,7 +228,7 @@ export default class BashServer {
       }
 
       // NOTE: we do not block the server initialization on this background analysis.
-      return { backgroundAnalysisCompleted: this.startBackgroundAnalysis() }
+      this.backgroundAnalysisCompleted = this.startBackgroundAnalysis()
     })
 
     // Respond to changes in the configuration.

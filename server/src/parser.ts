@@ -1,4 +1,4 @@
-import * as Parser from 'web-tree-sitter'
+import { Language, Parser } from 'web-tree-sitter'
 
 export async function initializeParser(): Promise<Parser> {
   await Parser.init()
@@ -10,7 +10,7 @@ export async function initializeParser(): Promise<Parser> {
    * To compile and use a new tree-sitter-bash version:
    *    sh scripts/upgrade-tree-sitter.sh
    */
-  const lang = await Parser.Language.load(`${__dirname}/../tree-sitter-bash.wasm`)
+  const lang = await Language.load(`${__dirname}/../tree-sitter-bash.wasm`)
 
   parser.setLanguage(lang)
   return parser

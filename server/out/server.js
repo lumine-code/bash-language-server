@@ -1,18 +1,79 @@
 'use strict'
+var __createBinding =
+  (this && this.__createBinding) ||
+  (Object.create
+    ? function (o, m, k, k2) {
+        if (k2 === undefined) k2 = k
+        var desc = Object.getOwnPropertyDescriptor(m, k)
+        if (
+          !desc ||
+          ('get' in desc ? !m.__esModule : desc.writable || desc.configurable)
+        ) {
+          desc = {
+            enumerable: true,
+            get: function () {
+              return m[k]
+            },
+          }
+        }
+        Object.defineProperty(o, k2, desc)
+      }
+    : function (o, m, k, k2) {
+        if (k2 === undefined) k2 = k
+        o[k2] = m[k]
+      })
+var __setModuleDefault =
+  (this && this.__setModuleDefault) ||
+  (Object.create
+    ? function (o, v) {
+        Object.defineProperty(o, 'default', { enumerable: true, value: v })
+      }
+    : function (o, v) {
+        o['default'] = v
+      })
+var __importStar =
+  (this && this.__importStar) ||
+  (function () {
+    var ownKeys = function (o) {
+      ownKeys =
+        Object.getOwnPropertyNames ||
+        function (o) {
+          var ar = []
+          for (var k in o)
+            if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k
+          return ar
+        }
+      return ownKeys(o)
+    }
+    return function (mod) {
+      if (mod && mod.__esModule) return mod
+      var result = {}
+      if (mod != null)
+        for (var k = ownKeys(mod), i = 0; i < k.length; i++)
+          if (k[i] !== 'default') __createBinding(result, mod, k[i])
+      __setModuleDefault(result, mod)
+      return result
+    }
+  })()
+var __importDefault =
+  (this && this.__importDefault) ||
+  function (mod) {
+    return mod && mod.__esModule ? mod : { default: mod }
+  }
 Object.defineProperty(exports, '__esModule', { value: true })
 exports.getCommandOptions = getCommandOptions
 const node_child_process_1 = require('node:child_process')
-const path = require('node:path')
+const path = __importStar(require('node:path'))
 const node_util_1 = require('node:util')
-const TurndownService = require('turndown')
-const LSP = require('vscode-languageserver/node')
+const turndown_1 = __importDefault(require('turndown'))
+const LSP = __importStar(require('vscode-languageserver/node'))
 const vscode_languageserver_textdocument_1 = require('vscode-languageserver-textdocument')
-const analyser_1 = require('./analyser')
-const Builtins = require('./builtins')
-const config = require('./config')
-const executables_1 = require('./executables')
+const analyser_1 = __importDefault(require('./analyser'))
+const Builtins = __importStar(require('./builtins'))
+const config = __importStar(require('./config'))
+const executables_1 = __importDefault(require('./executables'))
 const parser_1 = require('./parser')
-const ReservedWords = require('./reserved-words')
+const ReservedWords = __importStar(require('./reserved-words'))
 const shellcheck_1 = require('./shellcheck')
 const shfmt_1 = require('./shfmt')
 const snippets_1 = require('./snippets')
@@ -37,6 +98,10 @@ class BashServer {
   linter
   formatter
   workspaceFolder
+  // A notification carries no response, so the background pass cannot be handed
+  // back from `onInitialized`. Callers that need to wait for it — the specs —
+  // read it here instead.
+  backgroundAnalysisCompleted = null
   uriToCodeActions = {}
   constructor({
     analyzer,
@@ -184,7 +249,7 @@ class BashServer {
         this.analyzeAndLintDocument(currentDocument)
       }
       // NOTE: we do not block the server initialization on this background analysis.
-      return { backgroundAnalysisCompleted: this.startBackgroundAnalysis() }
+      this.backgroundAnalysisCompleted = this.startBackgroundAnalysis()
     })
     // Respond to changes in the configuration.
     connection.onDidChangeConfiguration(({ settings }) => {
@@ -545,7 +610,7 @@ class BashServer {
           return {
             contents: {
               kind: 'markdown',
-              value: new TurndownService().turndown(helpHTML),
+              value: new turndown_1.default().turndown(helpHTML),
             },
           }
         }

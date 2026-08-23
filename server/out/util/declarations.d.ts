@@ -1,5 +1,5 @@
 import * as LSP from 'vscode-languageserver/node';
-import * as Parser from 'web-tree-sitter';
+import { Node as SyntaxNode, Tree } from 'web-tree-sitter';
 export type GlobalDeclarations = {
     [word: string]: LSP.SymbolInformation;
 };
@@ -20,7 +20,7 @@ export type Declarations = {
  * for the entire workspace.
  */
 export declare function getGlobalDeclarations({ tree, uri, }: {
-    tree: Parser.Tree;
+    tree: Tree;
     uri: string;
 }): GlobalDeclarations;
 /**
@@ -28,7 +28,7 @@ export declare function getGlobalDeclarations({ tree, uri, }: {
  * This includes local variables.
  */
 export declare function getAllDeclarationsInTree({ tree, uri, }: {
-    tree: Parser.Tree;
+    tree: Tree;
     uri: string;
 }): LSP.SymbolInformation[];
 /**
@@ -39,15 +39,15 @@ export declare function getAllDeclarationsInTree({ tree, uri, }: {
  * Used when getting declarations for the current scope.
  */
 export declare function getLocalDeclarations({ node, rootNode, uri, }: {
-    node: Parser.SyntaxNode | null;
-    rootNode: Parser.SyntaxNode;
+    node: SyntaxNode | null;
+    rootNode: SyntaxNode;
     uri: string;
 }): Declarations;
 export type FindDeclarationParams = {
     /**
      * The node where the search will start.
      */
-    baseNode: Parser.SyntaxNode;
+    baseNode: SyntaxNode;
     symbolInfo: {
         position: LSP.Position;
         uri: string;
@@ -73,7 +73,7 @@ export type FindDeclarationParams = {
  * about a variable or a function.
  */
 export declare function findDeclarationUsingGlobalSemantics({ baseNode, symbolInfo: { position, uri, word, kind }, otherInfo: { currentUri, boundary }, }: FindDeclarationParams): {
-    declaration: Parser.SyntaxNode | null | undefined;
+    declaration: SyntaxNode | null | undefined;
     continueSearching: boolean;
 };
 /**
@@ -83,6 +83,6 @@ export declare function findDeclarationUsingGlobalSemantics({ baseNode, symbolIn
  * should contain data about a variable.
  */
 export declare function findDeclarationUsingLocalSemantics({ baseNode, symbolInfo: { position, word }, otherInfo: { boundary }, }: FindDeclarationParams): {
-    declaration: Parser.SyntaxNode | null | undefined;
+    declaration: SyntaxNode | null | undefined;
     continueSearching: boolean;
 };

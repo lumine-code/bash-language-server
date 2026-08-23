@@ -1,11 +1,10 @@
 import * as fs from 'fs'
-import * as FuzzySearch from 'fuzzy-search'
-import fetch from 'node-fetch'
+import FuzzySearch from 'fuzzy-search'
 import * as url from 'url'
 import { isDeepStrictEqual } from 'util'
 import * as LSP from 'vscode-languageserver/node'
 import { TextDocument } from 'vscode-languageserver-textdocument'
-import * as Parser from 'web-tree-sitter'
+import { Node as SyntaxNode, Parser, Point, Tree } from 'web-tree-sitter'
 
 import { flattenArray } from './util/array'
 import {
@@ -29,7 +28,7 @@ type AnalyzedDocument = {
   globalDeclarations: GlobalDeclarations
   sourcedUris: Set<string>
   sourceCommands: sourcing.SourceCommand[]
-  tree: Parser.Tree
+  tree: Tree
 }
 
 /**
@@ -75,6 +74,16 @@ export default class Analyzer {
     const fileContent = document.getText()
 
     const tree = this.parser.parse(fileContent)
+
+    // `parse` is nullable from web-tree-sitter 0.25 on: it returns null when the
+    // parser carries no language, or when the parse was cancelled. Neither can
+    // happen here — the language is loaded at startup and nothing cancels — but
+    // everything below reads the tree unconditionally, so say so plainly rather
+    // than dereferencing null.
+    if (!tree) {
+      logger.error(`Error while parsing ${uri}: the parser returned no tree`)
+      return diagnostics
+    }
 
     const globalDeclarations = getGlobalDeclarations({ tree, uri })
 
@@ -304,7 +313,7 @@ export default class Analyzer {
       boundary: params.position.line,
     }
     let parent = this.parentScope(node)
-    let declaration: Parser.SyntaxNode | null | undefined
+    let declaration: SyntaxNode | null | undefined
     let continueSearching = false
 
     // Search for local declaration within parents
@@ -409,7 +418,7 @@ export default class Analyzer {
     const locations: LSP.Location[] = []
 
     TreeSitterUtil.forEach(tree.rootNode, (n) => {
-      let namedNode: Parser.SyntaxNode | null = null
+      let namedNode: SyntaxNode | null = null
 
       if (TreeSitterUtil.isReference(n)) {
         // NOTE: a reference can be a command, variable, function, etc.
@@ -476,7 +485,7 @@ export default class Analyzer {
       : baseNode.startPosition
 
     const ignoredRanges: LSP.Range[] = []
-    const filterVariables = (n: Parser.SyntaxNode) => {
+    const filterVariables = (n: SyntaxNode) => {
       if (
         n.text !== word ||
         (n.type === 'word' && !TreeSitterUtil.isVariableInReadCommand(n))
@@ -534,7 +543,7 @@ export default class Analyzer {
 
       return includeDeclaration
     }
-    const filterFunctions = (n: Parser.SyntaxNode) => {
+    const filterFunctions = (n: SyntaxNode) => {
       const text = n.type === 'function_definition' ? n.firstNamedChild?.text : n.text
       if (text !== word) {
         return false
@@ -1031,7 +1040,7 @@ export default class Analyzer {
    * `function_definition`'s body, this only returns a `function_definition` if
    * its body is a `compound_statement`.
    */
-  private parentScope(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
+  private parentScope(node: SyntaxNode): SyntaxNode | null {
     return TreeSitterUtil.findParent(
       node,
       (n) =>
@@ -1043,11 +1052,7 @@ export default class Analyzer {
   /**
    * Find the node at the given point.
    */
-  private nodeAtPoint(
-    uri: string,
-    line: number,
-    column: number,
-  ): Parser.SyntaxNode | null {
+  private nodeAtPoint(uri: string, line: number, column: number): SyntaxNode | null {
     const tree = this.uriToAnalyzedDocument[uri]?.tree
 
     if (!tree?.rootNode) {
@@ -1058,11 +1063,7 @@ export default class Analyzer {
     return tree.rootNode.descendantForPosition({ row: line, column })
   }
 
-  private nodeAtPoints(
-    uri: string,
-    start: Parser.Point,
-    end: Parser.Point,
-  ): Parser.SyntaxNode | null {
+  private nodeAtPoints(uri: string, start: Point, end: Point): SyntaxNode | null {
     const rootNode = this.uriToAnalyzedDocument[uri]?.tree.rootNode
 
     if (!rootNode) {

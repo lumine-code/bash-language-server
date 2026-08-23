@@ -1,5 +1,5 @@
 import * as LSP from 'vscode-languageserver';
-import * as Parser from 'web-tree-sitter';
+import { Tree } from 'web-tree-sitter';
 export type SourceCommand = {
     range: LSP.Range;
     uri: string | null;
@@ -11,5 +11,5 @@ export type SourceCommand = {
 export declare function getSourceCommands({ fileUri, rootPath, tree, }: {
     fileUri: string;
     rootPath: string | null;
-    tree: Parser.Tree;
+    tree: Tree;
 }): SourceCommand[];

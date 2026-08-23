@@ -75,7 +75,7 @@ export const ConfigSchema = z.object({
       // Follow redirection operators with a space.
       spaceRedirects: z.boolean().default(false),
     })
-    .default({}),
+    .prefault({}),
 })
 
 export type Config = z.infer<typeof ConfigSchema>

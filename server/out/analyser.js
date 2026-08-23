@@ -1,11 +1,71 @@
 'use strict'
+var __createBinding =
+  (this && this.__createBinding) ||
+  (Object.create
+    ? function (o, m, k, k2) {
+        if (k2 === undefined) k2 = k
+        var desc = Object.getOwnPropertyDescriptor(m, k)
+        if (
+          !desc ||
+          ('get' in desc ? !m.__esModule : desc.writable || desc.configurable)
+        ) {
+          desc = {
+            enumerable: true,
+            get: function () {
+              return m[k]
+            },
+          }
+        }
+        Object.defineProperty(o, k2, desc)
+      }
+    : function (o, m, k, k2) {
+        if (k2 === undefined) k2 = k
+        o[k2] = m[k]
+      })
+var __setModuleDefault =
+  (this && this.__setModuleDefault) ||
+  (Object.create
+    ? function (o, v) {
+        Object.defineProperty(o, 'default', { enumerable: true, value: v })
+      }
+    : function (o, v) {
+        o['default'] = v
+      })
+var __importStar =
+  (this && this.__importStar) ||
+  (function () {
+    var ownKeys = function (o) {
+      ownKeys =
+        Object.getOwnPropertyNames ||
+        function (o) {
+          var ar = []
+          for (var k in o)
+            if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k
+          return ar
+        }
+      return ownKeys(o)
+    }
+    return function (mod) {
+      if (mod && mod.__esModule) return mod
+      var result = {}
+      if (mod != null)
+        for (var k = ownKeys(mod), i = 0; i < k.length; i++)
+          if (k[i] !== 'default') __createBinding(result, mod, k[i])
+      __setModuleDefault(result, mod)
+      return result
+    }
+  })()
+var __importDefault =
+  (this && this.__importDefault) ||
+  function (mod) {
+    return mod && mod.__esModule ? mod : { default: mod }
+  }
 Object.defineProperty(exports, '__esModule', { value: true })
-const fs = require('fs')
-const FuzzySearch = require('fuzzy-search')
-const node_fetch_1 = require('node-fetch')
-const url = require('url')
+const fs = __importStar(require('fs'))
+const fuzzy_search_1 = __importDefault(require('fuzzy-search'))
+const url = __importStar(require('url'))
 const util_1 = require('util')
-const LSP = require('vscode-languageserver/node')
+const LSP = __importStar(require('vscode-languageserver/node'))
 const vscode_languageserver_textdocument_1 = require('vscode-languageserver-textdocument')
 const array_1 = require('./util/array')
 const declarations_1 = require('./util/declarations')
@@ -13,8 +73,8 @@ const fs_1 = require('./util/fs')
 const logger_1 = require('./util/logger')
 const lsp_1 = require('./util/lsp')
 const shebang_1 = require('./util/shebang')
-const sourcing = require('./util/sourcing')
-const TreeSitterUtil = require('./util/tree-sitter')
+const sourcing = __importStar(require('./util/sourcing'))
+const TreeSitterUtil = __importStar(require('./util/tree-sitter'))
 /**
  * The Analyzer uses the Abstract Syntax Trees (ASTs) that are provided by
  * tree-sitter to find definitions, reference, etc.
@@ -47,6 +107,15 @@ class Analyzer {
     const diagnostics = []
     const fileContent = document.getText()
     const tree = this.parser.parse(fileContent)
+    // `parse` is nullable from web-tree-sitter 0.25 on: it returns null when the
+    // parser carries no language, or when the parse was cancelled. Neither can
+    // happen here — the language is loaded at startup and nothing cancels — but
+    // everything below reads the tree unconditionally, so say so plainly rather
+    // than dereferencing null.
+    if (!tree) {
+      logger_1.logger.error(`Error while parsing ${uri}: the parser returned no tree`)
+      return diagnostics
+    }
     const globalDeclarations = (0, declarations_1.getGlobalDeclarations)({ tree, uri })
     const sourceCommands = sourcing.getSourceCommands({
       fileUri: uri,
@@ -195,7 +264,7 @@ class Analyzer {
    * Find all the declaration symbols in the workspace matching the query using fuzzy search.
    */
   findDeclarationsWithFuzzySearch(query) {
-    const searcher = new FuzzySearch(this.getAllDeclarations(), ['name'], {
+    const searcher = new fuzzy_search_1.default(this.getAllDeclarations(), ['name'], {
       caseSensitive: true,
     })
     return searcher.search(query)
@@ -494,7 +563,7 @@ class Analyzer {
     }
     const searchParams = new URLSearchParams({ cmd: interestingNode.text }).toString()
     const url = `${endpoint}/explain?${searchParams}`
-    const explainshellRawResponse = await (0, node_fetch_1.default)(url)
+    const explainshellRawResponse = await fetch(url)
     const explainshellResponse = await explainshellRawResponse.json()
     if (!explainshellRawResponse.ok) {
       throw new Error(`HTTP request failed: ${url}`)

@@ -2,7 +2,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as LSP from 'vscode-languageserver'
-import * as Parser from 'web-tree-sitter'
+import { Node as SyntaxNode, Tree } from 'web-tree-sitter'
 
 import { parseShellCheckDirective } from '../shellcheck/directive'
 import { discriminate } from './discriminate'
@@ -27,7 +27,7 @@ export function getSourceCommands({
 }: {
   fileUri: string
   rootPath: string | null
-  tree: Parser.Tree
+  tree: Tree
 }): SourceCommand[] {
   const sourceCommands: SourceCommand[] = []
 
@@ -59,7 +59,7 @@ export function getSourceCommands({
 function getSourcedPathInfoFromNode({
   node,
 }: {
-  node: Parser.SyntaxNode
+  node: SyntaxNode
 }): null | { sourcedPath?: string; parseError?: string } {
   if (node.type === 'command') {
     const [commandNameNode, argumentNode] = node.namedChildren
@@ -205,7 +205,7 @@ function toFileUri(filePath: string): string {
  * Returns null if the source path can't be statically determined after stripping a segment.
  * Note: If a non-concatenation node is passed, null will be returned. This is likely a programmer error.
  */
-function resolveSourceFromConcatenation(node: Parser.SyntaxNode): string | null {
+function resolveSourceFromConcatenation(node: SyntaxNode): string | null {
   if (node.type !== 'concatenation') return null
   const stringValue = TreeSitterUtil.resolveStaticString(node)
   if (stringValue !== null) return stringValue // This string is fully static.

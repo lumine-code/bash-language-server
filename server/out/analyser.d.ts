@@ -1,6 +1,6 @@
 import * as LSP from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import * as Parser from 'web-tree-sitter';
+import { Parser } from 'web-tree-sitter';
 import { FindDeclarationParams } from './util/declarations';
 /**
  * The Analyzer uses the Abstract Syntax Trees (ASTs) that are provided by

@@ -14,6 +14,9 @@ export default class BashServer {
     private linter?;
     private formatter?;
     private workspaceFolder;
+    backgroundAnalysisCompleted: Promise<{
+        filesParsed: number;
+    }> | null;
     private uriToCodeActions;
     private constructor();
     /**

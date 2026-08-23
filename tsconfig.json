@@ -1,9 +1,11 @@
 {
   "compilerOptions": {
     "declaration": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
     "lib": ["dom", "es2022"],
-    "module": "commonjs",
-    "moduleResolution": "node",
+    "module": "node16",
+    "moduleResolution": "node16",
     "noImplicitAny": true,
     "noImplicitReturns": true,
     "rootDir": ".",

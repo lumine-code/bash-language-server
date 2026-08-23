@@ -54,8 +54,8 @@ async function initializeServer({
 
   server.register(connection)
   const onInitialized = connection.onInitialized.mock.calls[0][0]
-  const { backgroundAnalysisCompleted } = (await onInitialized({})) as any
-  await backgroundAnalysisCompleted
+  await onInitialized({})
+  await server.backgroundAnalysisCompleted
 
   return {
     connection,
