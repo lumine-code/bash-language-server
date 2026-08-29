@@ -12,7 +12,7 @@ export declare const ConfigSchema: z.ZodObject<{
     }>>;
     includeAllWorkspaceSymbols: z.ZodDefault<z.ZodBoolean>;
     shellcheckExternalSources: z.ZodDefault<z.ZodBoolean>;
-    shellcheckArguments: z.ZodDefault<z.ZodPreprocess<z.ZodArray<z.ZodString>>>;
+    shellcheckArguments: z.ZodDefault<z.ZodPreprocess<z.ZodArray<z.ZodString>, unknown>>;
     shellcheckPath: z.ZodDefault<z.ZodString>;
     shfmt: z.ZodPrefault<z.ZodObject<{
         path: z.ZodDefault<z.ZodString>;
