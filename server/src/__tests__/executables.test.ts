@@ -16,10 +16,12 @@ describe('list', () => {
     expect(result).toBeTruthy()
   })
 
-  it.skip('only considers files that have the executable bit set', async () => {
-    const result = executables.list().find((x) => x === 'iam-not-executable')
-    expect(result).toBeFalsy()
-  })
+  if (process.platform !== 'win32') {
+    it('only considers files that have the executable bit set', async () => {
+      const result = executables.list().find((x) => x === 'iam-not-executable')
+      expect(result).toBeFalsy()
+    })
+  }
 
   it('only considers executable directly on the PATH', async () => {
     const result = executables.list().find((x) => x === 'iam-executable-in-sub-folder')

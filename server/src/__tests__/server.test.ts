@@ -1090,9 +1090,16 @@ describe('server', () => {
       })
     })
 
-    it.skip('returns documentation from explainshell', async () => {
-      // Skipped as this requires a running explainshell server (and the code is hard to mock)
-      // docker container run --name explainshell --restart always -p 127.0.0.1:6000:5000 -d spaceinvaderone/explainshell
+    it('returns documentation from explainshell', async () => {
+      const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          matches: [
+            { helpHTML: 'list directory contents', start: 0, end: 2 },
+            { helpHTML: '<b>-l</b> use a long listing format', start: 3, end: 6 },
+          ],
+        }),
+      } as Response)
 
       const { connection } = await initializeServer({
         capabilities: {
@@ -1128,6 +1135,8 @@ describe('server', () => {
       expect((result2 as any)?.contents.value).toEqual(
         '**\\-l** use a long listing format',
       )
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      fetchMock.mockRestore()
     })
   })
 
