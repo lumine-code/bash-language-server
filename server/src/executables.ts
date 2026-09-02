@@ -58,7 +58,7 @@ async function findExecutablesInPath(path: string): Promise<string[]> {
       for (const childrenPath of childrenPaths) {
         try {
           const stats = await fs.promises.lstat(join(path, childrenPath))
-          if (isExecutableFile(stats)) {
+          if (isExecutableFile(join(path, childrenPath), stats)) {
             files.push(executableName(childrenPath))
           }
         } catch {
@@ -67,7 +67,7 @@ async function findExecutablesInPath(path: string): Promise<string[]> {
       }
 
       return files
-    } else if (isExecutableFile(pathStats)) {
+    } else if (isExecutableFile(path, pathStats)) {
       return [executableName(path)]
     }
   } catch {
@@ -77,9 +77,17 @@ async function findExecutablesInPath(path: string): Promise<string[]> {
   return []
 }
 
-function isExecutableFile(stats: fs.Stats): boolean {
+function executableExtensions(): Set<string> {
+  return new Set(
+    (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD')
+      .split(';')
+      .map((value) => value.toLowerCase()),
+  )
+}
+
+function isExecutableFile(filePath: string, stats: fs.Stats): boolean {
   if (process.platform === 'win32') {
-    return stats.isFile()
+    return stats.isFile() && executableExtensions().has(extname(filePath).toLowerCase())
   }
 
   const isExecutable = !!(1 & parseInt((stats.mode & parseInt('777', 8)).toString(8)[0]))
@@ -93,12 +101,7 @@ function executableName(filePath: string): string {
   }
 
   const extension = extname(name)
-  const executableExtensions = new Set(
-    (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD')
-      .split(';')
-      .map((value) => value.toLowerCase()),
-  )
-  return executableExtensions.has(extension.toLowerCase())
+  return executableExtensions().has(extension.toLowerCase())
     ? name.slice(0, -extension.length)
     : name
 }
