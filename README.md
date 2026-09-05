@@ -25,41 +25,37 @@ To be implemented:
 
 ## Installation
 
-### Dependencies
+Install the server globally from npm:
 
-As a dependency, we recommend that you first install [shellcheck][shellcheck] to enable linting: https://github.com/koalaman/shellcheck#installing . If `shellcheck` is installed, bash-language-server will automatically call it to provide linting and code analysis each time the file is updated (with debounce time of 500ms).
-
-If you want your shell scripts to be formatted consistently, you can install [shfmt][shfmt]. If `shfmt` is installed then your documents will be formatted whenever you take the 'format document' action. In most editors this can be configured to happen automatically when files are saved.
-
-### Bash language server
-
-Usually you want to install a client for your editor (see the section below).
-
-But if you want to install the server binary (for examples for editors, like helix, where a generic LSP client is built in), you can install from npm registry as:
-
-```bash
-npm i -g @lumine-code/bash-language-server
+```sh
+npm install --global @lumine-code/bash-language-server
 ```
 
-Alternatively, bash-language-server may also be distributed directly by your Linux distro, for example on Fedora based distros:
+Alternatively, bash-language-server may be distributed directly by your Linux distro, for example on Fedora based distros:
 
-```bash
+```sh
 dnf install -y nodejs-bash-language-server
 ```
 
 Or on Ubuntu with snap:
 
-```bash
+```sh
 sudo snap install bash-language-server --classic
 ```
 
 To verify that everything is working:
 
-```bash
+```sh
 bash-language-server --help
 ```
 
-If you encounter installation errors, ensure you have Node.js 24 or newer (`node --version`).
+Node.js 24 or newer is required.
+
+### Optional tools
+
+Install [ShellCheck][shellcheck] to enable linting. When it is available, bash-language-server calls it after each debounced document update.
+
+Install [shfmt][shfmt] for document formatting. Editors can invoke it explicitly or on save.
 
 ### Clients
 
@@ -211,3 +207,7 @@ Please see [docs/development-guide][dev-guide] for more information.
 [vim-ale]: https://github.com/dense-analysis/ale
 [coc.nvim]: https://github.com/neoclide/coc.nvim
 [jupyterlab-lsp]: https://github.com/krassowski/jupyterlab-lsp
+
+## Contributing
+
+Got ideas to make this package better, found a bug, or want to help add new features? Just drop your thoughts on GitHub. Any feedback is welcome!
