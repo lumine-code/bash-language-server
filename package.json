@@ -1,7 +1,7 @@
 {
   "name": "@lumine-code/bash-language-server",
   "author": "lumine-code",
-  "version": "6.0.0",
+  "version": "1.0.0",
   "description": "Bash language server maintained by lumine-code.",
   "license": "MIT",
   "main": "./server/out/server.js",
