@@ -47,12 +47,12 @@
   "dependencies": {
     "editorconfig": "3.0.2",
     "fast-glob": "3.3.3",
-    "fuzzy-search": "3.2.1",
+    "fuzzy-search": "3.3.0",
     "turndown": "7.2.4",
-    "vscode-languageserver": "10.1.1",
-    "vscode-languageserver-textdocument": "1.0.14",
-    "web-tree-sitter": "0.26.13",
-    "zod": "4.5.4"
+    "vscode-languageserver": "10.1.2",
+    "vscode-languageserver-textdocument": "1.0.15",
+    "web-tree-sitter": "0.27.0",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -64,11 +64,11 @@
     "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.12.0",
-    "jest": "30.5.0",
+    "jest": "30.5.2",
     "prettier": "^3.9.9",
-    "ts-jest": "29.4.12",
+    "ts-jest": "29.4.14",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.68.0"
+    "typescript-eslint": "8.70.1"
   },
   "jest": {
     "preset": "ts-jest",
