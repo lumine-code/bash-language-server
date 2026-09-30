@@ -1,6 +1,170 @@
-// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits for function-scoped declarations 1`] = `
+exports[`server > onCodeAction > responds to onCodeAction 2`] = `
+[
+  {
+    "diagnostics": [
+      {
+        "code": "SC2086",
+        "codeDescription": {
+          "href": "https://www.shellcheck.net/wiki/SC2086",
+        },
+        "data": {
+          "id": "shellcheck|2086|55:5-55:13",
+        },
+        "message": "Double quote to prevent globbing and word splitting.",
+        "range": {
+          "end": {
+            "character": 13,
+            "line": 55,
+          },
+          "start": {
+            "character": 5,
+            "line": 55,
+          },
+        },
+        "severity": 3,
+        "source": "shellcheck",
+        "tags": undefined,
+      },
+    ],
+    "edit": {
+      "changes": {
+        "file://__REPO_ROOT_FOLDER__/testing/fixtures/comment-doc-on-hover.sh": [
+          {
+            "newText": """,
+            "range": {
+              "end": {
+                "character": 13,
+                "line": 55,
+              },
+              "start": {
+                "character": 13,
+                "line": 55,
+              },
+            },
+          },
+          {
+            "newText": """,
+            "range": {
+              "end": {
+                "character": 5,
+                "line": 55,
+              },
+              "start": {
+                "character": 5,
+                "line": 55,
+              },
+            },
+          },
+        ],
+      },
+    },
+    "kind": "quickfix",
+    "title": "Apply fix for SC2086",
+  },
+  {
+    "diagnostics": [
+      {
+        "code": "SC2086",
+        "codeDescription": {
+          "href": "https://www.shellcheck.net/wiki/SC2086",
+        },
+        "data": {
+          "id": "shellcheck|2086|55:5-55:13",
+        },
+        "message": "Double quote to prevent globbing and word splitting.",
+        "range": {
+          "end": {
+            "character": 13,
+            "line": 55,
+          },
+          "start": {
+            "character": 5,
+            "line": 55,
+          },
+        },
+        "severity": 3,
+        "source": "shellcheck",
+        "tags": undefined,
+      },
+    ],
+    "edit": {
+      "changes": {
+        "file://__REPO_ROOT_FOLDER__/testing/fixtures/comment-doc-on-hover.sh": [
+          {
+            "newText": "# shellcheck disable=SC2086
+",
+            "range": {
+              "end": {
+                "character": 0,
+                "line": 55,
+              },
+              "start": {
+                "character": 0,
+                "line": 55,
+              },
+            },
+          },
+        ],
+      },
+    },
+    "kind": "quickfix",
+    "title": "Disable ShellCheck rule SC2086 for this command",
+  },
+  {
+    "diagnostics": [
+      {
+        "code": "SC2086",
+        "codeDescription": {
+          "href": "https://www.shellcheck.net/wiki/SC2086",
+        },
+        "data": {
+          "id": "shellcheck|2086|55:5-55:13",
+        },
+        "message": "Double quote to prevent globbing and word splitting.",
+        "range": {
+          "end": {
+            "character": 13,
+            "line": 55,
+          },
+          "start": {
+            "character": 5,
+            "line": 55,
+          },
+        },
+        "severity": 3,
+        "source": "shellcheck",
+        "tags": undefined,
+      },
+    ],
+    "edit": {
+      "changes": {
+        "file://__REPO_ROOT_FOLDER__/testing/fixtures/comment-doc-on-hover.sh": [
+          {
+            "newText": "# shellcheck disable=SC2086
+",
+            "range": {
+              "end": {
+                "character": 0,
+                "line": 1,
+              },
+              "start": {
+                "character": 0,
+                "line": 1,
+              },
+            },
+          },
+        ],
+      },
+    },
+    "kind": "quickfix",
+    "title": "Disable ShellCheck rule SC2086 for the entire file",
+  },
+]
+`;
+
+exports[`server > onRenameRequest > File-wide rename > returns correct WorkspaceEdits for function-scoped declarations 1`] = `
 {
   "changes": {
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/renaming.sh": [
@@ -61,7 +225,7 @@ exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits 
 }
 `;
 
-exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits for function-scoped declarations 2`] = `
+exports[`server > onRenameRequest > File-wide rename > returns correct WorkspaceEdits for function-scoped declarations 2`] = `
 {
   "changes": {
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/renaming.sh": [
@@ -96,7 +260,7 @@ exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits 
 }
 `;
 
-exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits for globally scoped declarations 1`] = `
+exports[`server > onRenameRequest > File-wide rename > returns correct WorkspaceEdits for globally scoped declarations 1`] = `
 {
   "changes": {
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/renaming.sh": [
@@ -157,7 +321,7 @@ exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits 
 }
 `;
 
-exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits for globally scoped declarations 2`] = `
+exports[`server > onRenameRequest > File-wide rename > returns correct WorkspaceEdits for globally scoped declarations 2`] = `
 {
   "changes": {
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/renaming.sh": [
@@ -283,7 +447,7 @@ exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits 
 }
 `;
 
-exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits for globally scoped declarations 3`] = `
+exports[`server > onRenameRequest > File-wide rename > returns correct WorkspaceEdits for globally scoped declarations 3`] = `
 {
   "changes": {
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/renaming.sh": [
@@ -318,7 +482,7 @@ exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits 
 }
 `;
 
-exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits for subshell-scoped declarations 1`] = `
+exports[`server > onRenameRequest > File-wide rename > returns correct WorkspaceEdits for subshell-scoped declarations 1`] = `
 {
   "changes": {
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/renaming.sh": [
@@ -379,7 +543,7 @@ exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits 
 }
 `;
 
-exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits for subshell-scoped declarations 2`] = `
+exports[`server > onRenameRequest > File-wide rename > returns correct WorkspaceEdits for subshell-scoped declarations 2`] = `
 {
   "changes": {
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/renaming.sh": [
@@ -414,7 +578,7 @@ exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits 
 }
 `;
 
-exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits for subshell-scoped declarations 3`] = `
+exports[`server > onRenameRequest > File-wide rename > returns correct WorkspaceEdits for subshell-scoped declarations 3`] = `
 {
   "changes": {
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/renaming.sh": [
@@ -449,7 +613,7 @@ exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits 
 }
 `;
 
-exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits for subshell-scoped declarations 4`] = `
+exports[`server > onRenameRequest > File-wide rename > returns correct WorkspaceEdits for subshell-scoped declarations 4`] = `
 {
   "changes": {
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/renaming.sh": [
@@ -484,7 +648,7 @@ exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits 
 }
 `;
 
-exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits for undeclared symbols 1`] = `
+exports[`server > onRenameRequest > File-wide rename > returns correct WorkspaceEdits for undeclared symbols 1`] = `
 {
   "changes": {
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/renaming.sh": [
@@ -519,7 +683,7 @@ exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits 
 }
 `;
 
-exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits for undeclared symbols 2`] = `
+exports[`server > onRenameRequest > File-wide rename > returns correct WorkspaceEdits for undeclared symbols 2`] = `
 {
   "changes": {
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/renaming.sh": [
@@ -567,7 +731,7 @@ exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits 
 }
 `;
 
-exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits for variables within read commands 1`] = `
+exports[`server > onRenameRequest > File-wide rename > returns correct WorkspaceEdits for variables within read commands 1`] = `
 {
   "changes": {
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/renaming-read.sh": [
@@ -744,37 +908,11 @@ exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits 
         "newText": "newName",
         "range": {
           "end": {
-            "character": 32,
-            "line": 15,
-          },
-          "start": {
-            "character": 25,
-            "line": 15,
-          },
-        },
-      },
-      {
-        "newText": "newName",
-        "range": {
-          "end": {
             "character": 15,
             "line": 16,
           },
           "start": {
             "character": 8,
-            "line": 16,
-          },
-        },
-      },
-      {
-        "newText": "newName",
-        "range": {
-          "end": {
-            "character": 34,
-            "line": 16,
-          },
-          "start": {
-            "character": 27,
             "line": 16,
           },
         },
@@ -810,7 +948,7 @@ exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits 
 }
 `;
 
-exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits for variables within read commands 2`] = `
+exports[`server > onRenameRequest > File-wide rename > returns correct WorkspaceEdits for variables within read commands 2`] = `
 {
   "changes": {
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/renaming-read.sh": [
@@ -845,7 +983,7 @@ exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits 
 }
 `;
 
-exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits for variables within read commands 3`] = `
+exports[`server > onRenameRequest > File-wide rename > returns correct WorkspaceEdits for variables within read commands 3`] = `
 {
   "changes": {
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/renaming-read.sh": [
@@ -919,7 +1057,7 @@ exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits 
 }
 `;
 
-exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits for variables within read commands 4`] = `
+exports[`server > onRenameRequest > File-wide rename > returns correct WorkspaceEdits for variables within read commands 4`] = `
 {
   "changes": {
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/renaming-read.sh": [
@@ -967,7 +1105,7 @@ exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits 
 }
 `;
 
-exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits for variables within read commands 5`] = `
+exports[`server > onRenameRequest > File-wide rename > returns correct WorkspaceEdits for variables within read commands 5`] = `
 {
   "changes": {
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/renaming-read.sh": [
@@ -1002,7 +1140,7 @@ exports[`server onRenameRequest File-wide rename returns correct WorkspaceEdits 
 }
 `;
 
-exports[`server onRenameRequest Workspace-wide rename returns correct WorkspaceEdits for sourced symbols 1`] = `
+exports[`server > onRenameRequest > Workspace-wide rename > returns correct WorkspaceEdits for sourced symbols 1`] = `
 {
   "changes": {
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/extension.inc": [
@@ -1080,54 +1218,9 @@ exports[`server onRenameRequest Workspace-wide rename returns correct WorkspaceE
 }
 `;
 
-exports[`server onRenameRequest Workspace-wide rename returns correct WorkspaceEdits for sourced symbols 2`] = `
+exports[`server > onRenameRequest > Workspace-wide rename > returns correct WorkspaceEdits for sourced symbols 2`] = `
 {
   "changes": {
-    "file://__REPO_ROOT_FOLDER__/scripts/release-client.sh": [
-      {
-        "newText": "newName",
-        "range": {
-          "end": {
-            "character": 10,
-            "line": 16,
-          },
-          "start": {
-            "character": 0,
-            "line": 16,
-          },
-        },
-      },
-    ],
-    "file://__REPO_ROOT_FOLDER__/scripts/release-server.sh": [
-      {
-        "newText": "newName",
-        "range": {
-          "end": {
-            "character": 10,
-            "line": 23,
-          },
-          "start": {
-            "character": 0,
-            "line": 23,
-          },
-        },
-      },
-    ],
-    "file://__REPO_ROOT_FOLDER__/scripts/tag-release.inc": [
-      {
-        "newText": "newName",
-        "range": {
-          "end": {
-            "character": 19,
-            "line": 4,
-          },
-          "start": {
-            "character": 9,
-            "line": 4,
-          },
-        },
-      },
-    ],
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/renaming.sh": [
       {
         "newText": "newName",
@@ -1171,11 +1264,26 @@ exports[`server onRenameRequest Workspace-wide rename returns correct WorkspaceE
         },
       },
     ],
+    "file://__REPO_ROOT_FOLDER__/testing/workspace/tag-release.inc": [
+      {
+        "newText": "newName",
+        "range": {
+          "end": {
+            "character": 19,
+            "line": 4,
+          },
+          "start": {
+            "character": 9,
+            "line": 4,
+          },
+        },
+      },
+    ],
   },
 }
 `;
 
-exports[`server onRenameRequest Workspace-wide rename returns correct WorkspaceEdits for unsourced symbols when includeAllWorkspaceSymbols is false 1`] = `
+exports[`server > onRenameRequest > Workspace-wide rename > returns correct WorkspaceEdits for unsourced symbols when includeAllWorkspaceSymbols is false 1`] = `
 {
   "changes": {
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/renaming.sh": [
@@ -1210,7 +1318,7 @@ exports[`server onRenameRequest Workspace-wide rename returns correct WorkspaceE
 }
 `;
 
-exports[`server onRenameRequest Workspace-wide rename returns correct WorkspaceEdits for unsourced symbols when includeAllWorkspaceSymbols is false 2`] = `
+exports[`server > onRenameRequest > Workspace-wide rename > returns correct WorkspaceEdits for unsourced symbols when includeAllWorkspaceSymbols is false 2`] = `
 {
   "changes": {
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/renaming.sh": [
@@ -1245,9 +1353,10 @@ exports[`server onRenameRequest Workspace-wide rename returns correct WorkspaceE
 }
 `;
 
-exports[`server onRenameRequest Workspace-wide rename returns correct WorkspaceEdits for unsourced symbols when includeAllWorkspaceSymbols is true 1`] = `
+exports[`server > onRenameRequest > Workspace-wide rename > returns correct WorkspaceEdits for unsourced symbols when includeAllWorkspaceSymbols is true 1`] = `
 {
   "changes": {
+    "file://__REPO_ROOT_FOLDER__/testing/fixtures/bats/test_helper.bash": [],
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/comment-doc-on-hover.sh": [],
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/extension.inc": [],
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/install.sh": [
@@ -1352,9 +1461,10 @@ exports[`server onRenameRequest Workspace-wide rename returns correct WorkspaceE
 }
 `;
 
-exports[`server onRenameRequest Workspace-wide rename returns correct WorkspaceEdits for unsourced symbols when includeAllWorkspaceSymbols is true 2`] = `
+exports[`server > onRenameRequest > Workspace-wide rename > returns correct WorkspaceEdits for unsourced symbols when includeAllWorkspaceSymbols is true 2`] = `
 {
   "changes": {
+    "file://__REPO_ROOT_FOLDER__/testing/fixtures/bats/test_helper.bash": [],
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/comment-doc-on-hover.sh": [],
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/extension.inc": [],
     "file://__REPO_ROOT_FOLDER__/testing/fixtures/install.sh": [],

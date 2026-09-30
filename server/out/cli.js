@@ -64,14 +64,11 @@ var __importDefault =
 Object.defineProperty(exports, '__esModule', { value: true })
 exports.runCli = runCli
 exports.listen = listen
+/* oxlint-disable no-console */
 const LSP = __importStar(require('vscode-languageserver/node'))
 const server_1 = __importDefault(require('./server'))
 const logger_1 = require('./util/logger')
-const packageJson = require('../../package')
-const repositoryUrl =
-  typeof packageJson.repository === 'string'
-    ? packageJson.repository
-    : packageJson.repository.url
+const packageJson = require('../../package.json')
 const PADDING = 38
 const commandsAndFlags = {
   start: 'Start listening on stdin/stdout',
@@ -90,7 +87,7 @@ ${Object.entries(commandsAndFlags)
 Environment variables:
   ${logger_1.LOG_LEVEL_ENV_VAR.padEnd(PADDING)} Set the log level (default: ${logger_1.DEFAULT_LOG_LEVEL})
 
-Further documentation: ${repositoryUrl}`)
+Further documentation: ${packageJson.repository}`)
 }
 function runCli() {
   const args = process.argv.slice(2)

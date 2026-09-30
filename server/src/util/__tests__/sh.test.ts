@@ -1,4 +1,12 @@
+import { describe, expect, it, vi } from 'vitest'
+/* oxlint-disable no-useless-escape */
+import * as ChildProcess from 'child_process'
+
 import * as sh from '../sh'
+
+vi.mock('child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('child_process')>()),
+}))
 
 describe('execShellScript', () => {
   it('resolves if childprocess sends close signal', async () => {
@@ -31,6 +39,30 @@ describe('getDocumentation', () => {
     expect(lines[0]).toEqual('NAME')
     expect(lines[1]).toContain('list directory contents')
   })
+
+  it('returns the external manual for an absolute command path', async () => {
+    const result = await sh.getShellDocumentation({ word: '/bin/ls' })
+    expect(result).toContain('list directory contents')
+  })
+
+  it('normalizes absolute paths before checking spaces', async () => {
+    const result = await sh.getShellDocumentation({ word: '/opt/My Tools/ls' })
+    expect(result).toContain('list directory contents')
+  })
+
+  it.each(['ls;printf injected', 'ls&printf injected', "ls'quoted"])(
+    'passes an absolute command basename as one argument: %s',
+    async (commandName) => {
+      const spawn = vi.spyOn(ChildProcess, 'spawn')
+      try {
+        const result = await sh.getShellDocumentation({ word: `/opt/bin/${commandName}` })
+        expect(result).toBeNull()
+        expect(spawn).toHaveBeenCalledWith('man', ['-P', 'cat', '--', commandName])
+      } finally {
+        spawn.mockRestore()
+      }
+    },
+  )
 
   it('skips documentation for some builtins', async () => {
     const result = await sh.getShellDocumentation({ word: 'else' })
@@ -511,7 +543,7 @@ BSD                             April 12, 2003                             BSD`)
 
 describe('memorize', () => {
   it('memorizes a function', async () => {
-    const fnRaw = jest.fn(async (args) => args)
+    const fnRaw = vi.fn(async (args) => args)
     const arg1 = { one: '1' }
     const arg2 = { another: { word: 'word' } }
     const fnMemorized = sh.memorize(fnRaw)

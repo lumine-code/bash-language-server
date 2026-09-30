@@ -1,10 +1,19 @@
-import { ConfigSchema, getConfigFromEnvironmentVariables } from '../config'
+import { describe, expect, it } from 'vitest'
+import {
+  ConfigSchema,
+  getConfigFromEnvironmentVariables,
+  InitializationOptionsSchema,
+} from '../config'
 import { LOG_LEVEL_ENV_VAR } from '../util/logger'
 
 describe('ConfigSchema', () => {
   it('returns a default', () => {
     expect(ConfigSchema.parse({})).toMatchInlineSnapshot(`
       {
+        "backgroundAnalysisIgnore": [
+          "**/node_modules/**",
+          "**/.git/**",
+        ],
         "backgroundAnalysisMaxFiles": 500,
         "enableSourceErrorDiagnostics": false,
         "explainshellEndpoint": "",
@@ -15,6 +24,7 @@ describe('ConfigSchema', () => {
         "shellcheckExternalSources": true,
         "shellcheckPath": "shellcheck",
         "shfmt": {
+          "additionalArguments": [],
           "binaryNextLine": false,
           "caseIndent": false,
           "funcNextLine": false,
@@ -51,6 +61,10 @@ describe('ConfigSchema', () => {
       }),
     ).toMatchInlineSnapshot(`
       {
+        "backgroundAnalysisIgnore": [
+          "**/node_modules/**",
+          "**/.git/**",
+        ],
         "backgroundAnalysisMaxFiles": 1,
         "enableSourceErrorDiagnostics": false,
         "explainshellEndpoint": "localhost:8080",
@@ -66,6 +80,7 @@ describe('ConfigSchema', () => {
         "shellcheckExternalSources": true,
         "shellcheckPath": "",
         "shfmt": {
+          "additionalArguments": [],
           "binaryNextLine": true,
           "caseIndent": true,
           "funcNextLine": true,
@@ -88,12 +103,40 @@ describe('ConfigSchema', () => {
     ).toEqual(['-e', 'SC2001', '-e', 'SC2002'])
   })
 })
+describe('InitializationOptionsSchema', () => {
+  it('leaves omitted settings absent instead of filling in defaults', () => {
+    expect(InitializationOptionsSchema.parse({})).toEqual({})
+    expect(
+      InitializationOptionsSchema.parse({
+        backgroundAnalysisMaxFiles: 0,
+        shfmt: { languageDialect: 'bash' },
+      }),
+    ).toEqual({
+      backgroundAnalysisMaxFiles: 0,
+      shfmt: { languageDialect: 'bash' },
+    })
+  })
+
+  it('ignores unrecognized settings', () => {
+    expect(
+      InitializationOptionsSchema.parse({
+        clientSetting: true,
+        shfmt: { clientSetting: true, path: ' custom-shfmt ' },
+      }),
+    ).toEqual({ shfmt: { path: 'custom-shfmt' } })
+  })
+})
+
 describe('getConfigFromEnvironmentVariables', () => {
   it('returns a default', () => {
     process.env = {}
     const { config } = getConfigFromEnvironmentVariables()
     expect(config).toMatchInlineSnapshot(`
       {
+        "backgroundAnalysisIgnore": [
+          "**/node_modules/**",
+          "**/.git/**",
+        ],
         "backgroundAnalysisMaxFiles": 500,
         "enableSourceErrorDiagnostics": false,
         "explainshellEndpoint": "",
@@ -104,6 +147,7 @@ describe('getConfigFromEnvironmentVariables', () => {
         "shellcheckExternalSources": true,
         "shellcheckPath": "shellcheck",
         "shfmt": {
+          "additionalArguments": [],
           "binaryNextLine": false,
           "caseIndent": false,
           "funcNextLine": false,
@@ -126,6 +170,10 @@ describe('getConfigFromEnvironmentVariables', () => {
     const { config } = getConfigFromEnvironmentVariables()
     expect(config).toMatchInlineSnapshot(`
       {
+        "backgroundAnalysisIgnore": [
+          "**/node_modules/**",
+          "**/.git/**",
+        ],
         "backgroundAnalysisMaxFiles": 500,
         "enableSourceErrorDiagnostics": false,
         "explainshellEndpoint": "",
@@ -136,6 +184,7 @@ describe('getConfigFromEnvironmentVariables', () => {
         "shellcheckExternalSources": true,
         "shellcheckPath": "",
         "shfmt": {
+          "additionalArguments": [],
           "binaryNextLine": false,
           "caseIndent": false,
           "funcNextLine": false,
@@ -164,6 +213,10 @@ describe('getConfigFromEnvironmentVariables', () => {
     const { config } = getConfigFromEnvironmentVariables()
     expect(config).toMatchInlineSnapshot(`
       {
+        "backgroundAnalysisIgnore": [
+          "**/node_modules/**",
+          "**/.git/**",
+        ],
         "backgroundAnalysisMaxFiles": 1,
         "enableSourceErrorDiagnostics": false,
         "explainshellEndpoint": "localhost:8080",
@@ -177,6 +230,7 @@ describe('getConfigFromEnvironmentVariables', () => {
         "shellcheckExternalSources": true,
         "shellcheckPath": "/path/to/shellcheck",
         "shfmt": {
+          "additionalArguments": [],
           "binaryNextLine": false,
           "caseIndent": true,
           "funcNextLine": false,
@@ -223,4 +277,11 @@ describe('getConfigFromEnvironmentVariables', () => {
     result = getConfigFromEnvironmentVariables().config.includeAllWorkspaceSymbols
     expect(result).toEqual(false)
   })
+})
+
+it('accepts custom background exclusions', () => {
+  expect(
+    ConfigSchema.parse({ backgroundAnalysisIgnore: ['**/build/**'] })
+      .backgroundAnalysisIgnore,
+  ).toEqual(['**/build/**'])
 })

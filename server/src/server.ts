@@ -12,7 +12,8 @@ import * as config from './config'
 import Executables from './executables'
 import { initializeParser } from './parser'
 import * as ReservedWords from './reserved-words'
-import { Linter, LintingResult } from './shellcheck'
+import { Linter } from './shellcheck'
+import { getCodeActions } from './shellcheck/code-actions'
 import { Formatter } from './shfmt'
 import { SNIPPETS } from './snippets'
 import { BashCompletionItem, CompletionItemDataType } from './types'
@@ -37,13 +38,10 @@ export default class BashServer {
   private executables: Executables
   private linter?: Linter
   private formatter?: Formatter
+  private initializationOptions?: unknown
   private workspaceFolder: string | null
-  // A notification carries no response, so the background pass cannot be handed
-  // back from `onInitialized`. Callers that need to wait for it — the specs —
-  // read it here instead.
-  public backgroundAnalysisCompleted: Promise<{ filesParsed: number }> | null = null
   private uriToCodeActions: {
-    [uri: string]: LintingResult['codeActions'] | undefined
+    [uri: string]: Record<string, LSP.CodeAction[] | undefined> | undefined
   } = {}
 
   private constructor({
@@ -80,7 +78,7 @@ export default class BashServer {
    */
   public static async initialize(
     connection: LSP.Connection,
-    { rootPath, rootUri, capabilities }: LSP.InitializeParams,
+    { rootPath, rootUri, capabilities, initializationOptions }: LSP.InitializeParams,
   ): // TODO: use workspaceFolders instead of rootPath
   Promise<BashServer> {
     setLogConnection(connection)
@@ -109,6 +107,7 @@ export default class BashServer {
       executables,
       workspaceFolder,
     })
+    server.initializationOptions = initializationOptions
 
     logger.debug('Initialized')
 
@@ -162,12 +161,16 @@ export default class BashServer {
       // when the text document first opened or when its content has changed.
       currentDocument = document
       if (initialized) {
-        this.analyzeAndLintDocument(document)
+        void this.analyzeAndLintDocument(document)
       }
     })
 
     this.documents.onDidClose((event) => {
-      connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] })
+      this.linter?.cancel(event.document.uri)
+      if (currentDocument?.uri === event.document.uri) {
+        currentDocument = null
+      }
+      void connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] })
       delete this.uriToCodeActions[event.document.uri]
     })
 
@@ -184,6 +187,10 @@ export default class BashServer {
     connection.onPrepareRename(this.onPrepareRename.bind(this))
     connection.onRenameRequest(this.onRenameRequest.bind(this))
     connection.onDocumentFormatting(this.onDocumentFormatting.bind(this))
+    connection.onShutdown(() => {
+      this.analyzer.cancelBackgroundAnalysis()
+      this.linter?.dispose()
+    })
 
     /**
      * The initialized notification is sent from the client to the server after
@@ -196,8 +203,8 @@ export default class BashServer {
       const { config: environmentConfig, environmentVariablesUsed } =
         config.getConfigFromEnvironmentVariables()
 
+      this.updateConfiguration(environmentConfig)
       if (environmentVariablesUsed.length > 0) {
-        this.updateConfiguration(environmentConfig)
         logger.warn(
           `Environment variable configuration is being deprecated, please use workspace configuration. The following environment variables were used: ${environmentVariablesUsed.join(
             ', ',
@@ -205,10 +212,25 @@ export default class BashServer {
         )
       }
 
+      const initializationOptions = config.InitializationOptionsSchema.safeParse(
+        this.initializationOptions ?? {},
+      )
+      if (initializationOptions.success) {
+        this.updateConfiguration({
+          ...this.config,
+          ...initializationOptions.data,
+          shfmt: { ...this.config.shfmt, ...initializationOptions.data.shfmt },
+        })
+      } else {
+        logger.warn(
+          `Failed to parse initialization options: ${initializationOptions.error}`,
+        )
+      }
+
       if (hasConfigurationCapability) {
         // Register event for all configuration changes.
         if (canDynamicallyRegisterConfigurationChangeNotification) {
-          connection.client.register(LSP.DidChangeConfigurationNotification.type, {
+          void connection.client.register(LSP.DidChangeConfigurationNotification.type, {
             section: CONFIGURATION_SECTION,
           })
         }
@@ -224,11 +246,11 @@ export default class BashServer {
       if (currentDocument) {
         // If we already have a document, analyze it now that we're initialized
         // and the linter is ready.
-        this.analyzeAndLintDocument(currentDocument)
+        void this.analyzeAndLintDocument(currentDocument)
       }
 
       // NOTE: we do not block the server initialization on this background analysis.
-      this.backgroundAnalysisCompleted = this.startBackgroundAnalysis()
+      void this.startBackgroundAnalysis()
     })
 
     // Respond to changes in the configuration.
@@ -236,10 +258,9 @@ export default class BashServer {
       const configChanged = this.updateConfiguration(settings[CONFIGURATION_SECTION])
       if (configChanged && initialized) {
         logger.debug('Configuration changed')
-        this.startBackgroundAnalysis()
-        if (currentDocument) {
-          this.uriToCodeActions[currentDocument.uri] = undefined
-          this.analyzeAndLintDocument(currentDocument)
+        void this.startBackgroundAnalysis()
+        for (const document of this.documents.all()) {
+          void this.analyzeAndLintDocument(document)
         }
       }
     })
@@ -257,6 +278,7 @@ export default class BashServer {
       return this.analyzer.initiateBackgroundAnalysis({
         globPattern: this.config.globPattern,
         backgroundAnalysisMaxFiles: this.config.backgroundAnalysisMaxFiles,
+        backgroundAnalysisIgnore: this.config.backgroundAnalysisIgnore,
       })
     }
 
@@ -276,6 +298,7 @@ export default class BashServer {
           // resetting the canLint flag though.
 
           const { shellcheckPath } = this.config
+          this.linter?.dispose()
           if (!shellcheckPath) {
             logger.info('ShellCheck linting is disabled as "shellcheckPath" was not set')
             this.linter = undefined
@@ -311,7 +334,7 @@ export default class BashServer {
           return true
         }
       } catch (err) {
-        logger.warn(`updateConfiguration: failed with ${err}`)
+        logger.warn(`updateConfiguration: failed with ${String(err)}`)
       }
     }
 
@@ -322,28 +345,38 @@ export default class BashServer {
    * Analyze and lint the given document.
    */
   public async analyzeAndLintDocument(document: TextDocument) {
-    const { uri } = document
+    const { uri, version } = document
+    delete this.uriToCodeActions[uri]
 
     // Load the tree for the modified contents into the analyzer:
     let diagnostics = this.analyzer.analyze({ uri, document })
 
     // Run ShellCheck diagnostics:
-    if (this.linter) {
+    const { linter } = this
+    if (linter) {
       try {
         const sourceFolders = this.workspaceFolder ? [this.workspaceFolder] : []
-        const { diagnostics: lintDiagnostics, codeActions } = await this.linter.lint(
+        const result = await linter.lint(
           document,
           sourceFolders,
           this.config.shellcheckArguments,
         )
+        if (!result || this.linter !== linter) {
+          return
+        }
+        const { diagnostics: lintDiagnostics } = result
         diagnostics = diagnostics.concat(lintDiagnostics)
-        this.uriToCodeActions[uri] = codeActions
+        this.uriToCodeActions[uri] = getCodeActions({
+          document,
+          rootNode: this.analyzer.getRootNode(uri),
+          result,
+        })
       } catch (err) {
-        logger.error(`Error while linting: ${err}`)
+        logger.error(`Error while linting: ${String(err)}`)
       }
     }
 
-    this.connection.sendDiagnostics({ uri, version: document.version, diagnostics })
+    await this.connection.sendDiagnostics({ uri, version, diagnostics })
   }
 
   private logRequest({
@@ -425,9 +458,10 @@ export default class BashServer {
   private async onCodeAction(params: LSP.CodeActionParams): Promise<LSP.CodeAction[]> {
     const codeActionsForUri = this.uriToCodeActions[params.textDocument.uri] || {}
 
-    const codeActions = params.context.diagnostics
-      .map(({ data }) => codeActionsForUri[data?.id])
-      .filter((action): action is LSP.CodeAction => action != null)
+    const codeActions = uniqueBasedOnHash(
+      params.context.diagnostics.flatMap(({ data }) => codeActionsForUri[data?.id] || []),
+      (action) => JSON.stringify([action.title, action.edit]),
+    )
 
     logger.debug(`onCodeAction: found ${codeActions.length} code action(s)`)
 
@@ -566,13 +600,17 @@ export default class BashServer {
       }
     }
 
+    const supportsSnippets =
+      this.clientCapabilities.textDocument?.completion?.completionItem?.snippetSupport ===
+      true
+
     const allCompletions = [
       ...reservedWordsCompletions,
       ...symbolCompletions,
       ...programCompletions,
       ...builtinsCompletions,
       ...optionsCompletions,
-      ...SNIPPETS,
+      ...(supportsSnippets ? SNIPPETS : []),
     ]
 
     if (word) {
@@ -610,7 +648,7 @@ export default class BashServer {
             documentation: getMarkdownContent(documentation, 'man'),
           }
         : item
-    } catch {
+    } catch (error) {
       return item
     }
   }
@@ -663,8 +701,12 @@ export default class BashServer {
       return null
     }
 
+    const isVariable =
+      this.analyzer.symbolAtPointFromTextPosition(params)?.kind ===
+      LSP.SymbolKind.Variable
+
     const { explainshellEndpoint } = this.config
-    if (explainshellEndpoint) {
+    if (explainshellEndpoint && !isVariable) {
       try {
         const { helpHTML } = await this.analyzer.getExplainshellDocumentation({
           params,
@@ -681,7 +723,7 @@ export default class BashServer {
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : error
-        logger.warn(`getExplainshellDocumentation exception: ${errorMessage}`)
+        logger.warn(`getExplainshellDocumentation exception: ${String(errorMessage)}`)
       }
     }
 
@@ -692,9 +734,10 @@ export default class BashServer {
       position: params.position,
     })
     if (
-      ReservedWords.isReservedWord(word) ||
-      Builtins.isBuiltin(word) ||
-      (this.executables.isExecutableOnPATH(word) && symbolsMatchingWord.length == 0)
+      !isVariable &&
+      (ReservedWords.isReservedWord(word) ||
+        Builtins.isBuiltin(word) ||
+        (symbolsMatchingWord.length == 0 && (await this.executables.isExecutable(word))))
     ) {
       logger.debug(
         `onHover: getting shell documentation for reserved word or builtin or executable`,
@@ -842,7 +885,7 @@ export default class BashServer {
 
         return await this.formatter.format(document, params.options, this.config.shfmt)
       } catch (err) {
-        logger.error(`Error while formatting: ${err}`)
+        logger.error(`Error while formatting: ${String(err)}`)
       }
     }
 
@@ -948,15 +991,25 @@ function symbolKindToDescription(s: LSP.SymbolKind): string {
 function getMarkdownContent(documentation: string, language?: string): LSP.MarkupContent {
   return {
     value: language
-      ? [`\`\`\` ${language}`, documentation, '```'].join('\n')
+      ? // oxlint-disable-next-line prefer-template
+        ['``` ' + language, documentation, '```'].join('\n')
       : documentation,
     kind: LSP.MarkupKind.Markdown,
   }
 }
 
 export function getCommandOptions(name: string, word: string): string[] {
+  // bash-completion may execute the command with --help. Only accept plain
+  // command names, never paths or shell syntax taken from the document.
+  if (!/^[A-Za-z0-9_]/.test(name) || /[^A-Za-z0-9_.+-]/.test(name)) {
+    return []
+  }
+
   const optionsScript = path.join(__dirname, './get-options.sh')
-  const options = spawnSync('bash', [optionsScript, name, word])
+  const options =
+    process.platform === 'win32'
+      ? spawnSync('bash', [optionsScript, name, word])
+      : spawnSync(optionsScript, [name, word])
 
   if (options.status !== 0) {
     return []

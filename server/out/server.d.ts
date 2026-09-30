@@ -13,17 +13,15 @@ export default class BashServer {
     private executables;
     private linter?;
     private formatter?;
+    private initializationOptions?;
     private workspaceFolder;
-    backgroundAnalysisCompleted: Promise<{
-        filesParsed: number;
-    }> | null;
     private uriToCodeActions;
     private constructor();
     /**
      * Initialize the server based on a connection to the client and the protocols
      * initialization parameters.
      */
-    static initialize(connection: LSP.Connection, { rootPath, rootUri, capabilities }: LSP.InitializeParams): Promise<BashServer>;
+    static initialize(connection: LSP.Connection, { rootPath, rootUri, capabilities, initializationOptions }: LSP.InitializeParams): Promise<BashServer>;
     /**
      * The parts of the Language Server Protocol that we are currently supporting.
      */

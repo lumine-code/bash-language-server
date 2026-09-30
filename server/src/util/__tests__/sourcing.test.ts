@@ -1,43 +1,32 @@
-import type * as fs from 'fs'
-import { join } from 'node:path'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { pathToFileURL } from 'node:url'
+
+import * as fs from 'fs'
+import * as os from 'os'
+import * as path from 'path'
 import { Parser } from 'web-tree-sitter'
 
-import { REPO_ROOT_FOLDER } from '../../../../testing/fixtures'
+import { FIXTURE_FOLDER, REPO_ROOT_FOLDER } from '../../../../testing/fixtures'
 import { initializeParser } from '../../parser'
 import { getSourceCommands } from '../sourcing'
 
+vi.mock('fs', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('fs')>()),
+}))
+vi.mock('os', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('os')>()),
+}))
+
 const fileDirectory = '/Users/bash'
-const fileUri = `${fileDirectory}/file.sh`
+const fileUri = pathToFileURL(path.join(fileDirectory, 'file.sh')).href
 
 let parser: Parser
 beforeAll(async () => {
   parser = await initializeParser()
 })
 
-beforeEach(() => {
-  mockExistsSync.mockImplementation(jest.requireActual<typeof fs>('fs').existsSync)
-})
-
-// Under node16 resolution a namespace import is compiled to a fresh copy of the
-// module's exports, so spying on the real module is no longer something the code
-// under test can see. Replace the modules in the registry instead.
-//
-// Fix the home directory the code under test reads; it imports `node:os`.
-jest.mock('node:os', () => ({
-  ...jest.requireActual('node:os'),
-  homedir: () => '/Users/bash-user',
-}))
-
-// `existsSync` answers differently per test, so it stays a jest.fn the tests
-// drive. The `mock` prefix is what lets the factory close over it. It answers
-// for real unless a test says otherwise — most of them read fixtures that are
-// genuinely on disk.
-const mockExistsSync = jest.fn<boolean, [fs.PathLike]>()
-jest.mock('fs', () => ({
-  ...jest.requireActual('fs'),
-  existsSync: (path: fs.PathLike) => mockExistsSync(path),
-}))
+// mock os.homedir() to return a fixed path
+vi.spyOn(os, 'homedir').mockImplementation(() => '/Users/bash-user')
 
 describe('getSourcedUris', () => {
   it('returns an empty set if no files were sourced', () => {
@@ -45,13 +34,75 @@ describe('getSourcedUris', () => {
     const sourceCommands = getSourceCommands({
       fileUri,
       rootPath: null,
-      tree: parser.parse(fileContent),
+      tree: parser.parse(fileContent)!,
     })
     expect(sourceCommands).toEqual([])
   })
 
+  it.each(['path', 'URI'])('resolves an encoded workspace %s', (rootType) => {
+    const workspacePath = path.resolve('/Users/bash/project #? %23 café')
+    const sourcedPath = path.join(workspacePath, 'library #? %23 café.inc')
+    const existsSync = vi
+      .spyOn(fs, 'existsSync')
+      .mockImplementation((filePath) => filePath === sourcedPath)
+
+    try {
+      const sourceCommands = getSourceCommands({
+        fileUri: pathToFileURL('/Users/bash/elsewhere/main.sh').href,
+        rootPath: rootType === 'URI' ? pathToFileURL(workspacePath).href : workspacePath,
+        tree: parser.parse('source "./library #? %23 café.inc"')!,
+      })
+
+      expect(sourceCommands).toEqual([
+        {
+          range: expect.any(Object),
+          uri: pathToFileURL(sourcedPath).href,
+          error: null,
+        },
+      ])
+      expect(existsSync).toHaveBeenCalledWith(sourcedPath)
+    } finally {
+      existsSync.mockRestore()
+    }
+  })
+
+  it.runIf(process.platform === 'win32').each(['forward', 'native'])(
+    'resolves absolute Windows %s paths without making them workspace-relative',
+    (pathStyle) => {
+      const sourcedPath = path.join(
+        os.tmpdir(),
+        'outside #? %23 café',
+        'library #? %23 café.inc',
+      )
+      const commandPath =
+        pathStyle === 'forward' ? sourcedPath.replaceAll('\\', '/') : sourcedPath
+      const existsSync = vi
+        .spyOn(fs, 'existsSync')
+        .mockImplementation((filePath) => filePath === commandPath)
+      try {
+        const sourceCommands = getSourceCommands({
+          fileUri: pathToFileURL(path.join(os.tmpdir(), 'workspace', 'main.sh')).href,
+          rootPath: path.join(os.tmpdir(), 'workspace'),
+          tree: parser.parse(`source '${commandPath}'`)!,
+        })
+
+        expect(sourceCommands).toEqual([
+          {
+            range: expect.any(Object),
+            uri: pathToFileURL(sourcedPath).href,
+            error: null,
+          },
+        ])
+        expect(existsSync).toHaveBeenCalledWith(commandPath)
+        expect(existsSync).toHaveBeenCalledTimes(1)
+      } finally {
+        existsSync.mockRestore()
+      }
+    },
+  )
+
   it('returns a set of sourced files (but ignores some unhandled cases)', () => {
-    mockExistsSync.mockImplementation(() => true)
+    vi.spyOn(fs, 'existsSync').mockImplementation(() => true)
 
     const fileContent = `
       source file-in-path.sh # does not contain a slash (i.e. is maybe somewhere on the path)
@@ -152,11 +203,16 @@ describe('getSourcedUris', () => {
     const sourceCommands = getSourceCommands({
       fileUri,
       rootPath: null,
-      tree: parser.parse(fileContent),
+      tree: parser.parse(fileContent)!,
     })
 
+    // These mocked paths model the POSIX fixture independently of the host drive.
+    const snapshotCommands = sourceCommands.map((command) => ({
+      ...command,
+      uri: command.uri?.replace(/^file:\/\/\/[A-Za-z]:/, 'file://') ?? null,
+    }))
     const sourcedUris = new Set(
-      sourceCommands
+      snapshotCommands
         .map((sourceCommand) => sourceCommand.uri)
         .filter((uri) => uri !== null),
     )
@@ -175,14 +231,14 @@ describe('getSourcedUris', () => {
       }
     `)
 
-    expect(sourceCommands).toMatchSnapshot()
+    expect(snapshotCommands).toMatchSnapshot()
   })
 
   it('returns a set of sourced files and parses ShellCheck directives', () => {
-    jest.restoreAllMocks()
+    vi.restoreAllMocks()
 
     const fileContent = `
-      . ./scripts/release-client.sh
+      . ./testing/workspace/helper.sh
 
       source ./testing/fixtures/issue206.sh
 
@@ -207,7 +263,7 @@ describe('getSourcedUris', () => {
     const sourceCommands = getSourceCommands({
       fileUri,
       rootPath: REPO_ROOT_FOLDER,
-      tree: parser.parse(fileContent),
+      tree: parser.parse(fileContent)!,
     })
 
     const sourcedUris = new Set(
@@ -218,12 +274,11 @@ describe('getSourcedUris', () => {
 
     expect(sourcedUris).toEqual(
       new Set([
-        pathToFileURL(join(REPO_ROOT_FOLDER, 'scripts', 'release-client.sh')).href,
-        pathToFileURL(join(REPO_ROOT_FOLDER, 'testing', 'fixtures', 'issue206.sh')).href,
-        pathToFileURL(join(REPO_ROOT_FOLDER, 'testing', 'fixtures', 'missing-node.sh'))
-          .href,
-        pathToFileURL(join(REPO_ROOT_FOLDER, 'testing', 'fixtures', 'install.sh')).href,
-        pathToFileURL(join(REPO_ROOT_FOLDER, 'testing', 'fixtures', 'issue101.sh')).href,
+        pathToFileURL(`${REPO_ROOT_FOLDER}/testing/workspace/helper.sh`).href,
+        pathToFileURL(`${REPO_ROOT_FOLDER}/testing/fixtures/issue206.sh`).href,
+        pathToFileURL(`${REPO_ROOT_FOLDER}/testing/fixtures/missing-node.sh`).href,
+        pathToFileURL(`${REPO_ROOT_FOLDER}/testing/fixtures/install.sh`).href,
+        pathToFileURL(`${REPO_ROOT_FOLDER}/testing/fixtures/issue101.sh`).href,
       ]),
     )
 
@@ -242,5 +297,129 @@ describe('getSourcedUris', () => {
         },
       ]
     `)
+  })
+  it.each([
+    'source "$libFolder/example.sh" || exit 1',
+    '. "$libFolder/example.sh" && echo loaded',
+    'source "$libFolder/example.sh" && echo loaded || exit 1',
+  ])('uses the ShellCheck source directive before %s', (command) => {
+    vi.restoreAllMocks()
+
+    const sourceCommands = getSourceCommands({
+      fileUri,
+      rootPath: REPO_ROOT_FOLDER,
+      tree: parser.parse(
+        `# shellcheck source=./testing/fixtures/issue206.sh\n${command}`,
+      )!,
+    })
+
+    expect(sourceCommands).toEqual([
+      expect.objectContaining({
+        uri: pathToFileURL(`${FIXTURE_FOLDER}issue206.sh`).href,
+        error: null,
+      }),
+    ])
+  })
+
+  it.each(['source=/dev/null', 'disable=SC1091'])(
+    'honors ShellCheck %s before a source command with error handling',
+    (directive) => {
+      const sourceCommands = getSourceCommands({
+        fileUri,
+        rootPath: REPO_ROOT_FOLDER,
+        tree: parser.parse(`# shellcheck ${directive}\nsource "$X" || exit 1`)!,
+      })
+
+      expect(sourceCommands).toEqual([])
+    },
+  )
+
+  it('does not reuse a source directive for later commands in a list', () => {
+    vi.restoreAllMocks()
+
+    const sourceCommands = getSourceCommands({
+      fileUri,
+      rootPath: REPO_ROOT_FOLDER,
+      tree: parser.parse(`
+        # shellcheck source=./testing/fixtures/issue206.sh
+        source "$X" && source ./testing/fixtures/install.sh
+      `)!,
+    })
+
+    expect(sourceCommands.map(({ uri, error }) => ({ uri, error }))).toEqual([
+      { uri: pathToFileURL(`${FIXTURE_FOLDER}issue206.sh`).href, error: null },
+      { uri: pathToFileURL(`${FIXTURE_FOLDER}install.sh`).href, error: null },
+    ])
+  })
+
+  it('resolves bats `load` commands in .bats files', () => {
+    vi.restoreAllMocks()
+
+    const fileContent = `
+      load test_helper # bats appends the .bash extension
+
+      load ./test_helper.bash # explicit extension
+
+      load "${FIXTURE_FOLDER.replaceAll('\\', '/')}bats/test_helper" # absolute path
+
+      load ../issue101.sh # relative to the test file
+
+      load "$SOME_VARIABLE" # dynamic loads are not supported
+
+      load # not finished
+      `
+
+    const sourceCommands = getSourceCommands({
+      fileUri: `${FIXTURE_FOLDER}bats/sourcing.bats`,
+      rootPath: REPO_ROOT_FOLDER,
+      tree: parser.parse(fileContent)!,
+    })
+
+    const sourcedUris = new Set(
+      sourceCommands
+        .map((sourceCommand) => sourceCommand.uri)
+        .filter((uri) => uri !== null),
+    )
+
+    expect(sourcedUris).toEqual(
+      new Set([
+        pathToFileURL(`${FIXTURE_FOLDER}bats/test_helper.bash`).href,
+        pathToFileURL(`${FIXTURE_FOLDER}issue101.sh`).href,
+      ]),
+    )
+
+    expect(
+      sourceCommands
+        .filter((command) => command.error)
+        .map(({ error, range }) => ({
+          error,
+          line: range.start.line,
+        })),
+    ).toMatchInlineSnapshot(`
+      [
+        {
+          "error": "non-constant source not supported",
+          "line": 9,
+        },
+      ]
+    `)
+  })
+
+  it('does not treat `load` as a sourcing command outside of .bats files', () => {
+    vi.restoreAllMocks()
+
+    const fileContent = `
+      load test_helper
+
+      load ../issue101.sh
+      `
+
+    const sourceCommands = getSourceCommands({
+      fileUri: `${FIXTURE_FOLDER}bats/not-a-bats-file.sh`,
+      rootPath: REPO_ROOT_FOLDER,
+      tree: parser.parse(fileContent)!,
+    })
+
+    expect(sourceCommands).toEqual([])
   })
 })

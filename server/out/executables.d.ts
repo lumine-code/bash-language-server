@@ -5,9 +5,9 @@ export default class Executables {
     private executables;
     private constructor();
     /**
-     * @param pathValue is expected to use the platform PATH delimiter.
+     * @param path uses the current platform's PATH delimiter.
      */
-    static fromPath(pathValue: string): Promise<Executables>;
+    static fromPath(path: string): Promise<Executables>;
     /**
      * Find all programs in your PATH
      */
@@ -16,4 +16,8 @@ export default class Executables {
      * Check if the the given {{executable}} exists on the PATH
      */
     isExecutableOnPATH(executable: string): boolean;
+    /**
+     * Recognize commands invoked by their absolute path as well as names on PATH.
+     */
+    isExecutable(executable: string): Promise<boolean>;
 }

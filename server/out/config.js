@@ -1,13 +1,58 @@
 'use strict'
 Object.defineProperty(exports, '__esModule', { value: true })
-exports.ConfigSchema = void 0
+exports.InitializationOptionsSchema =
+  exports.ConfigSchema =
+  exports.ShfmtConfigSchema =
+    void 0
 exports.getConfigFromEnvironmentVariables = getConfigFromEnvironmentVariables
 exports.getDefaultConfiguration = getDefaultConfiguration
 const zod_1 = require('zod')
 const logger_1 = require('./util/logger')
+exports.ShfmtConfigSchema = zod_1.z.object({
+  // Controls the executable used for Shfmt formatting. An empty string will disable formatting
+  path: zod_1.z.string().trim().default('shfmt'),
+  // Additional Shfmt arguments. Note that common arguments can be configured via the other settings.
+  additionalArguments: zod_1.z
+    .preprocess((arg) => {
+      let argsList = []
+      if (typeof arg === 'string') {
+        argsList = arg.split(' ')
+      } else if (Array.isArray(arg)) {
+        argsList = arg
+      } else {
+        return arg
+      }
+      return argsList
+        .map((s) => (typeof s === 'string' ? s.trim() : s))
+        .filter((s) => s !== '')
+    }, zod_1.z.array(zod_1.z.string()))
+    .default([]),
+  // Ignore shfmt config options in .editorconfig (always use language server config)
+  ignoreEditorconfig: zod_1.z.boolean().default(false),
+  // Language dialect to use when parsing (bash/posix/mksh/bats).
+  languageDialect: zod_1.z
+    .enum(['auto', 'bash', 'posix', 'mksh', 'bats'])
+    .default('auto'),
+  // Allow boolean operators (like && and ||) to start a line.
+  binaryNextLine: zod_1.z.boolean().default(false),
+  // Indent patterns in case statements.
+  caseIndent: zod_1.z.boolean().default(false),
+  // Place function opening braces on a separate line.
+  funcNextLine: zod_1.z.boolean().default(false),
+  // (Deprecated) Keep column alignment padding.
+  keepPadding: zod_1.z.boolean().default(false),
+  // Simplify code before formatting.
+  simplifyCode: zod_1.z.boolean().default(false),
+  // Follow redirection operators with a space.
+  spaceRedirects: zod_1.z.boolean().default(false),
+})
 exports.ConfigSchema = zod_1.z.object({
   // Maximum number of files to analyze in the background. Set to 0 to disable background analysis.
   backgroundAnalysisMaxFiles: zod_1.z.number().int().min(0).default(500),
+  // Glob patterns excluded from background file discovery. Sourced/open files remain available on demand.
+  backgroundAnalysisIgnore: zod_1.z
+    .array(zod_1.z.string())
+    .default(['**/node_modules/**', '**/.git/**']),
   // Enable diagnostics for source errors. Ignored if includeAllWorkspaceSymbols is true.
   enableSourceErrorDiagnostics: zod_1.z.boolean().default(false),
   // Glob pattern for finding and parsing shell script files in the workspace. Used by the background analysis features across files.
@@ -33,37 +78,32 @@ exports.ConfigSchema = zod_1.z.object({
         argsList = arg.split(' ')
       } else if (Array.isArray(arg)) {
         argsList = arg
+      } else {
+        return arg
       }
-      return argsList.map((s) => s.trim()).filter((s) => s.length > 0)
+      return argsList
+        .map((s) => (typeof s === 'string' ? s.trim() : s))
+        .filter((s) => s !== '')
     }, zod_1.z.array(zod_1.z.string()))
     .default([]),
   // Controls the executable used for ShellCheck linting information. An empty string will disable linting.
   shellcheckPath: zod_1.z.string().trim().default('shellcheck'),
-  shfmt: zod_1.z
-    .object({
-      // Controls the executable used for Shfmt formatting. An empty string will disable formatting
-      path: zod_1.z.string().trim().default('shfmt'),
-      // Ignore shfmt config options in .editorconfig (always use language server config)
-      ignoreEditorconfig: zod_1.z.boolean().default(false),
-      // Language dialect to use when parsing (bash/posix/mksh/bats).
-      languageDialect: zod_1.z
-        .enum(['auto', 'bash', 'posix', 'mksh', 'bats'])
-        .default('auto'),
-      // Allow boolean operators (like && and ||) to start a line.
-      binaryNextLine: zod_1.z.boolean().default(false),
-      // Indent patterns in case statements.
-      caseIndent: zod_1.z.boolean().default(false),
-      // Place function opening braces on a separate line.
-      funcNextLine: zod_1.z.boolean().default(false),
-      // (Deprecated) Keep column alignment padding.
-      keepPadding: zod_1.z.boolean().default(false),
-      // Simplify code before formatting.
-      simplifyCode: zod_1.z.boolean().default(false),
-      // Follow redirection operators with a space.
-      spaceRedirects: zod_1.z.boolean().default(false),
-    })
-    .prefault({}),
+  shfmt: exports.ShfmtConfigSchema.prefault({}),
 })
+// Initialization options override only supplied settings, preserving environment defaults.
+exports.InitializationOptionsSchema = partialWithoutDefaults(exports.ConfigSchema).extend(
+  {
+    shfmt: partialWithoutDefaults(exports.ShfmtConfigSchema).optional(),
+  },
+)
+// Zod 4 applies defaults even inside optional fields. Initialization options must
+// only include supplied settings so they do not overwrite environment defaults.
+function partialWithoutDefaults(schema) {
+  const shape = Object.fromEntries(
+    Object.entries(schema.shape).map(([key, value]) => [key, value.unwrap()]),
+  )
+  return zod_1.z.object(shape).partial()
+}
 function getConfigFromEnvironmentVariables() {
   const rawConfig = {
     backgroundAnalysisMaxFiles: toNumber(process.env.BACKGROUND_ANALYSIS_MAX_FILES),

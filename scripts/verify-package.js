@@ -34,4 +34,9 @@ if (missing.length) {
   throw new Error(`Packed server is missing: ${missing.join(', ')}`)
 }
 
+const optionsHelper = pack.files.find(({ path }) => path === 'server/out/get-options.sh')
+if (process.platform !== 'win32' && !(optionsHelper.mode & 0o111)) {
+  throw new Error('Packed command-option helper must be executable on POSIX systems')
+}
+
 console.log(`Verified ${pack.entryCount} packed files, including the parser WASM.`)

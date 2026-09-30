@@ -1,12 +1,14 @@
 import * as LSP from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { Parser } from 'web-tree-sitter';
+import { Node as SyntaxNode, Parser } from 'web-tree-sitter';
 import { FindDeclarationParams } from './util/declarations';
 /**
  * The Analyzer uses the Abstract Syntax Trees (ASTs) that are provided by
  * tree-sitter to find definitions, reference, etc.
  */
 export default class Analyzer {
+    private backgroundAnalysisController?;
+    private backgroundAnalyzedUris;
     private enableSourceErrorDiagnostics;
     private includeAllWorkspaceSymbols;
     private parser;
@@ -22,23 +24,22 @@ export default class Analyzer {
      * Analyze the given document, cache the tree-sitter AST, and iterate over the
      * tree to find declarations.
      */
-    analyze({ document, uri, }: {
+    analyze({ document, uri, // NOTE: we don't use document.uri to make testing easier
+    background, }: {
         document: TextDocument;
         uri: string;
+        background?: boolean;
     }): LSP.Diagnostic[];
-    /**
-     * Initiates a background analysis of the files in the workspaceFolder to
-     * enable features across files.
-     *
-     * NOTE that when the source aware feature is enabled files are also parsed
-     * when they are found.
-     */
-    initiateBackgroundAnalysis({ backgroundAnalysisMaxFiles, globPattern, }: {
+    cancelBackgroundAnalysis(): void;
+    /** Discover and analyze workspace files within one elapsed-time budget. */
+    initiateBackgroundAnalysis({ backgroundAnalysisMaxFiles, backgroundAnalysisIgnore, globPattern, }: {
         backgroundAnalysisMaxFiles: number;
+        backgroundAnalysisIgnore?: string[];
         globPattern: string;
     }): Promise<{
         filesParsed: number;
     }>;
+    private evictBackgroundDocuments;
     /**
      * Find all the locations where the word was declared.
      */
@@ -113,6 +114,7 @@ export default class Analyzer {
      * Get the document for the given URI.
      */
     getDocument(uri: string): TextDocument | undefined;
+    getRootNode(uri: string): SyntaxNode | undefined;
     getExplainshellDocumentation({ params, endpoint, }: {
         params: LSP.TextDocumentPositionParams;
         endpoint: string;

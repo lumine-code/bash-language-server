@@ -6,6 +6,7 @@ import * as LSP from 'vscode-languageserver/node'
 import { TextDocument } from 'vscode-languageserver-textdocument'
 import { Node as SyntaxNode, Parser, Point, Tree } from 'web-tree-sitter'
 
+import { getDefaultConfiguration } from './config'
 import { flattenArray } from './util/array'
 import {
   FindDeclarationParams,
@@ -17,11 +18,14 @@ import {
   GlobalDeclarations,
 } from './util/declarations'
 import { getFilePaths } from './util/fs'
+import { getInputVariableDeclaration, variableNameRange } from './util/input-declarations'
 import { logger } from './util/logger'
 import { isPositionIncludedInRange } from './util/lsp'
 import { analyzeFile } from './util/shebang'
 import * as sourcing from './util/sourcing'
 import * as TreeSitterUtil from './util/tree-sitter'
+
+const BACKGROUND_ANALYSIS_TIMEOUT_MS = 10000
 
 type AnalyzedDocument = {
   document: TextDocument
@@ -36,6 +40,8 @@ type AnalyzedDocument = {
  * tree-sitter to find definitions, reference, etc.
  */
 export default class Analyzer {
+  private backgroundAnalysisController?: AbortController
+  private backgroundAnalyzedUris = new Set<string>()
   private enableSourceErrorDiagnostics: boolean
   private includeAllWorkspaceSymbols: boolean
   private parser: Parser
@@ -66,32 +72,36 @@ export default class Analyzer {
   public analyze({
     document,
     uri, // NOTE: we don't use document.uri to make testing easier
+    background = false,
   }: {
     document: TextDocument
     uri: string
+    background?: boolean
   }): LSP.Diagnostic[] {
+    // An opened/on-demand document must survive subsequent background rescans,
+    // including when parsing its new contents fails.
+    if (!background) this.backgroundAnalyzedUris.delete(uri)
     const diagnostics: LSP.Diagnostic[] = []
     const fileContent = document.getText()
 
     const tree = this.parser.parse(fileContent)
-
-    // `parse` is nullable from web-tree-sitter 0.25 on: it returns null when the
-    // parser carries no language, or when the parse was cancelled. Neither can
-    // happen here — the language is loaded at startup and nothing cancels — but
-    // everything below reads the tree unconditionally, so say so plainly rather
-    // than dereferencing null.
     if (!tree) {
-      logger.error(`Error while parsing ${uri}: the parser returned no tree`)
-      return diagnostics
+      throw new Error(`Failed to parse ${uri}: no syntax tree returned`)
     }
 
-    const globalDeclarations = getGlobalDeclarations({ tree, uri })
-
-    const sourceCommands = sourcing.getSourceCommands({
-      fileUri: uri,
-      rootPath: this.workspaceFolder,
-      tree,
-    })
+    let globalDeclarations: GlobalDeclarations
+    let sourceCommands: sourcing.SourceCommand[]
+    try {
+      globalDeclarations = getGlobalDeclarations({ tree, uri })
+      sourceCommands = sourcing.getSourceCommands({
+        fileUri: uri,
+        rootPath: this.workspaceFolder,
+        tree,
+      })
+    } catch (error) {
+      tree.delete()
+      throw error
+    }
 
     const sourcedUris = new Set(
       sourceCommands
@@ -99,6 +109,9 @@ export default class Analyzer {
         .filter((uri): uri is string => uri !== null),
     )
 
+    // The AST lives in WebAssembly memory. Waiting for JavaScript finalizers
+    // lets that memory grow substantially during repeated edits.
+    this.uriToAnalyzedDocument[uri]?.tree.delete()
     this.uriToAnalyzedDocument[uri] = {
       document,
       globalDeclarations,
@@ -106,6 +119,7 @@ export default class Analyzer {
       sourceCommands: sourceCommands.filter((sourceCommand) => !sourceCommand.error),
       tree,
     }
+    if (background) this.backgroundAnalyzedUris.add(uri)
 
     if (!this.includeAllWorkspaceSymbols) {
       sourceCommands
@@ -144,26 +158,29 @@ export default class Analyzer {
     return diagnostics
   }
 
-  /**
-   * Initiates a background analysis of the files in the workspaceFolder to
-   * enable features across files.
-   *
-   * NOTE that when the source aware feature is enabled files are also parsed
-   * when they are found.
-   */
+  public cancelBackgroundAnalysis(): void {
+    this.backgroundAnalysisController?.abort()
+  }
+
+  /** Discover and analyze workspace files within one elapsed-time budget. */
   public async initiateBackgroundAnalysis({
     backgroundAnalysisMaxFiles,
+    backgroundAnalysisIgnore = getDefaultConfiguration().backgroundAnalysisIgnore,
     globPattern,
   }: {
     backgroundAnalysisMaxFiles: number
+    backgroundAnalysisIgnore?: string[]
     globPattern: string
   }): Promise<{ filesParsed: number }> {
+    this.cancelBackgroundAnalysis()
+    const controller = new AbortController()
+    this.backgroundAnalysisController = controller
+    const { signal } = controller
     const rootPath = this.workspaceFolder
-    if (!rootPath) {
-      return { filesParsed: 0 }
-    }
+    if (!rootPath) return { filesParsed: 0 }
 
     if (backgroundAnalysisMaxFiles <= 0) {
+      this.evictBackgroundDocuments(new Set())
       logger.info(`BackgroundAnalysis: skipping as backgroundAnalysisMaxFiles was 0...`)
       return { filesParsed: 0 }
     }
@@ -172,59 +189,147 @@ export default class Analyzer {
       `BackgroundAnalysis: resolving glob "${globPattern}" inside "${rootPath}"...`,
     )
 
-    const lookupStartTime = Date.now()
-    const getTimePassed = (): string => `${(Date.now() - lookupStartTime) / 1000} seconds`
-
-    let filePaths: string[]
-    try {
-      filePaths = await getFilePaths({
-        globPattern,
-        rootPath,
-        maxItems: backgroundAnalysisMaxFiles,
-      })
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : error
+    const started = Date.now()
+    const deadline = started + BACKGROUND_ANALYSIS_TIMEOUT_MS
+    const expire = () => {
+      if (signal.aborted) return
       logger.warn(
-        `BackgroundAnalysis: failed resolved glob "${globPattern}". The experience across files will be degraded. Error: ${errorMessage}`,
+        `BackgroundAnalysis: stopped after ${BACKGROUND_ANALYSIS_TIMEOUT_MS}ms; workspace symbols may be incomplete. Exclude large folders with backgroundAnalysisIgnore or narrow globPattern.`,
       )
-      return { filesParsed: 0 }
+      controller.abort()
     }
+    const stopped = () => {
+      // Synchronous parsing can delay the timer; check between parses as well.
+      if (Date.now() >= deadline) expire()
+      return signal.aborted
+    }
+    const timer = setTimeout(expire, BACKGROUND_ANALYSIS_TIMEOUT_MS)
+    const getTimePassed = () => `${(Date.now() - started) / 1000} seconds`
+    let filesParsed = 0
 
-    logger.info(
-      `BackgroundAnalysis: Glob resolved with ${
-        filePaths.length
-      } files after ${getTimePassed()}`,
-    )
-
-    for (const filePath of filePaths) {
-      const uri = url.pathToFileURL(filePath).href
-
+    try {
+      // fast-glob traverses hidden directories for globstars even though the
+      // default pattern cannot match their files. Only prune for that pattern:
+      // custom globs may deliberately target hidden directories.
+      let filePaths: string[]
       try {
-        const fileContent = await fs.promises.readFile(filePath, 'utf8')
-        const fileDialect = analyzeFile(uri, fileContent)
-        // Bail if the dialect is unsupported
-        if (!fileDialect.dialect) {
-          logger.info(
-            `BackgroundAnalysis: Skipping file ${uri} with dialect "${JSON.stringify(
-              fileDialect,
-            )}"`,
-          )
-          continue
-        }
-
-        this.analyze({
-          document: TextDocument.create(uri, 'shell', 1, fileContent),
-          uri,
+        filePaths = await getFilePaths({
+          globPattern,
+          rootPath,
+          maxItems: backgroundAnalysisMaxFiles,
+          timeoutMs: BACKGROUND_ANALYSIS_TIMEOUT_MS,
+          ignore: backgroundAnalysisIgnore,
+          skipHiddenEntries: globPattern === getDefaultConfiguration().globPattern,
+          signal,
+          onLimit: (reason) => {
+            if (reason === 'time') expire()
+            else
+              logger.warn(
+                `BackgroundAnalysis: stopped discovery at the directories limit; workspace symbols may be incomplete. Exclude large folders with backgroundAnalysisIgnore or narrow globPattern.`,
+              )
+          },
         })
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : error
-        logger.warn(`BackgroundAnalysis: Failed analyzing ${uri}. Error: ${errorMessage}`)
+        if (!signal.aborted)
+          logger.warn(
+            `BackgroundAnalysis: failed resolving glob "${globPattern}". The experience across files will be degraded. Error: ${String(
+              error,
+            )}`,
+          )
+        return { filesParsed }
+      }
+      if (stopped()) return { filesParsed }
+
+      this.evictBackgroundDocuments(
+        new Set(filePaths.map((p) => url.pathToFileURL(p).href)),
+      )
+      logger.info(
+        `BackgroundAnalysis: Glob resolved with ${
+          filePaths.length
+        } files after ${getTimePassed()}`,
+      )
+
+      for (const filePath of filePaths) {
+        if (stopped()) break
+        const uri = url.pathToFileURL(filePath).href
+        const isOnDemand = () =>
+          this.uriToAnalyzedDocument[uri] && !this.backgroundAnalyzedUris.has(uri)
+        // Do not replace an open document's unsaved contents with its disk copy.
+        if (isOnDemand()) continue
+
+        try {
+          let cancelRead: () => void = () => undefined
+          const canceled = new Promise<undefined>((resolve) => {
+            cancelRead = () => resolve(undefined)
+            signal.addEventListener('abort', cancelRead, { once: true })
+          })
+          let fileContent: string | undefined
+          try {
+            // AbortSignal stops readFile's buffering, but an OS read may still
+            // be pending. Settle the background pass immediately on cancellation.
+            fileContent = await Promise.race([
+              fs.promises.readFile(filePath, { encoding: 'utf8', signal }),
+              canceled,
+            ])
+          } finally {
+            signal.removeEventListener('abort', cancelRead)
+          }
+          if (stopped() || fileContent === undefined) break
+          // The document may have been opened or edited while its read awaited I/O.
+          if (isOnDemand()) continue
+          const fileDialect = analyzeFile(uri, fileContent)
+          if (!fileDialect.dialect) {
+            logger.info(
+              `BackgroundAnalysis: Skipping file ${uri} with dialect "${JSON.stringify(
+                fileDialect,
+              )}"`,
+            )
+            continue
+          }
+
+          this.analyze({
+            document: TextDocument.create(uri, 'shell', 1, fileContent),
+            uri,
+            background: true,
+          })
+          filesParsed++
+        } catch (error) {
+          if (stopped()) break
+          logger.warn(
+            `BackgroundAnalysis: Failed analyzing ${uri}. Error: ${String(error)}`,
+          )
+        }
+      }
+      // Rereading background files can remove source relationships. Recompute
+      // the retained dependency graph, without cleanup from a canceled old pass.
+      if (!stopped()) {
+        this.evictBackgroundDocuments(
+          new Set(filePaths.map((p) => url.pathToFileURL(p).href)),
+        )
+      }
+      logger.info(`BackgroundAnalysis: Completed after ${getTimePassed()}.`)
+      return { filesParsed }
+    } finally {
+      clearTimeout(timer)
+      if (this.backgroundAnalysisController === controller) {
+        this.backgroundAnalysisController = undefined
       }
     }
+  }
 
-    logger.info(`BackgroundAnalysis: Completed after ${getTimePassed()}.`)
-    return {
-      filesParsed: filePaths.length,
+  private evictBackgroundDocuments(keep: Set<string>): void {
+    // Preserve dependencies of opened/on-demand documents, even if a previous
+    // background scan happened to analyze those dependencies first.
+    for (const uri of Object.keys(this.uriToAnalyzedDocument)) {
+      if (!this.backgroundAnalyzedUris.has(uri)) {
+        for (const sourcedUri of this.findAllSourcedUris({ uri })) keep.add(sourcedUri)
+      }
+    }
+    for (const uri of this.backgroundAnalyzedUris) {
+      if (keep.has(uri)) continue
+      this.uriToAnalyzedDocument[uri]?.tree.delete()
+      delete this.uriToAnalyzedDocument[uri]
+      this.backgroundAnalyzedUris.delete(uri)
     }
   }
 
@@ -378,7 +483,7 @@ export default class Analyzer {
 
     return {
       declaration: declaration
-        ? LSP.Location.create(otherInfo.currentUri, TreeSitterUtil.range(declaration))
+        ? LSP.Location.create(otherInfo.currentUri, variableNameRange(declaration))
         : null,
       parent: parent
         ? LSP.Location.create(params.uri, TreeSitterUtil.range(parent))
@@ -420,15 +525,20 @@ export default class Analyzer {
     TreeSitterUtil.forEach(tree.rootNode, (n) => {
       let namedNode: SyntaxNode | null = null
 
-      if (TreeSitterUtil.isReference(n)) {
+      if (getInputVariableDeclaration(n)) {
+        namedNode = n
+      } else if (TreeSitterUtil.isReference(n)) {
         // NOTE: a reference can be a command, variable, function, etc.
         namedNode = n.firstNamedChild || n
       } else if (TreeSitterUtil.isDefinition(n)) {
         namedNode = n.firstNamedChild
       }
 
-      if (namedNode && namedNode.text === word) {
-        const range = TreeSitterUtil.range(namedNode)
+      if (
+        namedNode &&
+        (getInputVariableDeclaration(namedNode)?.name ?? namedNode.text) === word
+      ) {
+        const range = variableNameRange(namedNode)
 
         const alreadyInLocations = locations.some((loc) => {
           return isDeepStrictEqual(loc.range, range)
@@ -478,7 +588,7 @@ export default class Analyzer {
 
     const typeOfDescendants =
       kind === LSP.SymbolKind.Variable
-        ? ['variable_name', 'word']
+        ? ['variable_name', 'word', 'string', 'raw_string']
         : ['function_definition', 'command_name']
     const startPosition = start
       ? { row: start.line, column: start.character }
@@ -486,10 +596,8 @@ export default class Analyzer {
 
     const ignoredRanges: LSP.Range[] = []
     const filterVariables = (n: SyntaxNode) => {
-      if (
-        n.text !== word ||
-        (n.type === 'word' && !TreeSitterUtil.isVariableInReadCommand(n))
-      ) {
+      const input = getInputVariableDeclaration(n)
+      if ((input?.name ?? n.text) !== word || (n.type !== 'variable_name' && !input)) {
         return false
       }
 
@@ -531,8 +639,8 @@ export default class Analyzer {
             ['local', 'declare', 'typeset'].includes(
               declarationCommand?.firstChild?.text as any,
             ))) ||
-        // Local variables within `read` command that are typed as `word`
-        (parent.type === 'subshell' && n.type === 'word')
+        // Input destinations belong to their enclosing subshell.
+        (parent.type === 'subshell' && !!input)
       if (isLocal) {
         if (includeDeclaration) {
           ignoredRanges.push(TreeSitterUtil.range(parent))
@@ -578,7 +686,7 @@ export default class Analyzer {
           return TreeSitterUtil.range(n.firstNamedChild)
         }
 
-        return TreeSitterUtil.range(n)
+        return variableNameRange(n)
       })
   }
 
@@ -616,6 +724,10 @@ export default class Analyzer {
     return this.uriToAnalyzedDocument[uri]?.document
   }
 
+  public getRootNode(uri: string): SyntaxNode | undefined {
+    return this.uriToAnalyzedDocument[uri]?.tree.rootNode
+  }
+
   // TODO: move somewhere else than the analyzer...
   public async getExplainshellDocumentation({
     params,
@@ -647,7 +759,13 @@ export default class Analyzer {
     }
 
     type ExplainshellResponse = {
-      matches?: Array<{ helpHTML: string; start: number; end: number }>
+      matches?: Array<{
+        helpHTML?: string
+        helpclass?: string
+        start: number
+        end: number
+      }>
+      helptext?: Array<[html: string, helpclass: string]>
     }
 
     const searchParams = new URLSearchParams({ cmd: interestingNode.text }).toString()
@@ -671,7 +789,13 @@ export default class Analyzer {
           offsetOfMousePointerInCommand < helpItem.end,
       )
 
-      return { helpHTML: match && match.helpHTML }
+      const helpHTML =
+        match?.helpHTML ??
+        (match?.helpclass
+          ? explainshellResponse.helptext?.find(([, id]) => id === match.helpclass)?.[0]
+          : undefined)
+
+      return { helpHTML }
     }
   }
 
@@ -729,9 +853,8 @@ export default class Analyzer {
 
     // iterate on every line above and including
     // the current line until getComment returns null
-    while (true) {
-      const currentComment = getComment(currentLine)
-      if (currentComment === null) break
+    let currentComment: string | null = ''
+    while ((currentComment = getComment(currentLine)) !== null) {
       commentBlock.push(currentComment)
       commentBlockIndex -= 1
       currentLine = doc.getText({
@@ -758,6 +881,13 @@ export default class Analyzer {
    */
   public wordAtPoint(uri: string, line: number, column: number): string | null {
     const node = this.nodeAtPoint(uri, line, column)
+    if (node) {
+      const input =
+        getInputVariableDeclaration(node) ||
+        (node.parent && getInputVariableDeclaration(node.parent))
+      if (input && isPositionIncludedInRange({ line, character: column }, input.range))
+        return input.name
+    }
 
     if (!node || node.childCount > 0 || node.text.trim() === '') {
       return null
@@ -804,10 +934,13 @@ export default class Analyzer {
       }
     }
 
-    if (TreeSitterUtil.isVariableInReadCommand(node)) {
+    const input =
+      getInputVariableDeclaration(node) ||
+      (node.parent && getInputVariableDeclaration(node.parent))
+    if (input && isPositionIncludedInRange(params.position, input.range)) {
       return {
-        word: node.text,
-        range: TreeSitterUtil.range(node),
+        word: input.name,
+        range: input.range,
         kind: LSP.SymbolKind.Variable,
       }
     }
@@ -938,7 +1071,7 @@ export default class Analyzer {
             uri,
           })
         } catch (err) {
-          logger.warn(`Error while analyzing file ${uri}: ${err}`)
+          logger.warn(`Error while analyzing file ${uri}: ${String(err)}`)
           return false
         }
       }
@@ -984,11 +1117,30 @@ export default class Analyzer {
           Object.keys(localDeclarations).map((name) => {
             const symbolsMatchingWord = localDeclarations[name]
 
-            // Find the latest definition
+            // Prefer the latest preceding definition, with the first following
+            // function as a fallback: a function body can call a function that
+            // is declared later in the file.
             let closestSymbol: LSP.SymbolInformation | null = null
+            let followingFunction: LSP.SymbolInformation | null = null
             symbolsMatchingWord.forEach((symbol) => {
-              // Skip if the symbol is defined in the current file after the requested position
-              if (symbol.location.range.start.line > position.line) {
+              if (
+                symbol.location.range.start.line > position.line ||
+                (symbol.kind === LSP.SymbolKind.Variable &&
+                  symbol.location.range.start.line === position.line &&
+                  symbol.location.range.start.character > position.character)
+              ) {
+                if (
+                  symbol.kind === LSP.SymbolKind.Function &&
+                  !symbol.containerName &&
+                  node?.type === 'word' &&
+                  node.parent?.type === 'command_name' &&
+                  TreeSitterUtil.findParentOfType(node, 'function_definition') &&
+                  (!followingFunction ||
+                    symbol.location.range.start.line <
+                      followingFunction.location.range.start.line)
+                ) {
+                  followingFunction = symbol
+                }
                 return
               }
 
@@ -1000,8 +1152,9 @@ export default class Analyzer {
               }
             })
 
-            if (closestSymbol) {
-              symbols.push(closestSymbol)
+            const symbol = closestSymbol || followingFunction
+            if (symbol) {
+              symbols.push(symbol)
             }
           })
         }

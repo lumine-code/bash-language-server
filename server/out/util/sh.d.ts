@@ -12,7 +12,5 @@ export declare function formatManOutput(manOutput: string): string;
 /**
  * Only works for one-parameter (serializable) functions.
  */
-export declare function memorize<TArgument, TResult>(func: (argument: TArgument) => Promise<TResult>): (argument: TArgument) => Promise<TResult>;
-export declare const getShellDocumentation: (argument: {
-    word: string;
-}) => Promise<string | null>;
+export declare function memorize<T extends Function>(func: T): T;
+export declare const getShellDocumentation: typeof getShellDocumentationWithoutCache;

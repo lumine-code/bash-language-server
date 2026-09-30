@@ -61,12 +61,14 @@ const node_path_1 = require('node:path')
 const node_url_1 = require('node:url')
 const child_process_1 = require('child_process')
 const LSP = __importStar(require('vscode-languageserver/node'))
-const async_1 = require('../util/async')
 const logger_1 = require('../util/logger')
 const shebang_1 = require('../util/shebang')
 const config_1 = require('./config')
 const types_1 = require('./types')
 const DEBOUNCE_MS = 500
+const LINT_TIMEOUT_MS = 10000
+const MAX_CONCURRENT_JOBS = 2
+const KILL_GRACE_MS = 1000
 function safeFileURLToPath(uri) {
   try {
     const url = new node_url_1.URL(uri)
@@ -79,37 +81,108 @@ function safeFileURLToPath(uri) {
   }
 }
 class Linter {
+  disposed = false
+  timeoutMs
+  maxConcurrent
   cwd
   executablePath
   externalSources
-  uriToDebouncedExecuteLint
+  uriToLintJob = new Map()
   _canLint
-  constructor({ cwd, executablePath, externalSources = true }) {
+  constructor({
+    cwd,
+    executablePath,
+    externalSources = true,
+    timeoutMs = LINT_TIMEOUT_MS,
+    maxConcurrent = MAX_CONCURRENT_JOBS,
+  }) {
     this._canLint = true
     this.cwd = cwd || process.cwd()
     this.executablePath = executablePath
     this.externalSources = externalSources
-    this.uriToDebouncedExecuteLint = Object.create(null)
+    this.timeoutMs = timeoutMs
+    this.maxConcurrent = maxConcurrent
+  }
+  // Share slots across linter replacements during configuration changes.
+  static runningJobs = 0
+  static readyJobs = new Map()
+  static drainQueue() {
+    for (const [job, run] of Linter.readyJobs) {
+      if (Linter.runningJobs >= job.maxConcurrent) continue
+      Linter.readyJobs.delete(job)
+      Linter.runningJobs++
+      run()
+    }
   }
   get canLint() {
     return this._canLint
   }
+  cancel(uri) {
+    const job = this.uriToLintJob.get(uri)
+    if (job) {
+      this.uriToLintJob.delete(uri)
+      Linter.readyJobs.delete(job)
+      clearTimeout(job.timeout)
+      job.controller.abort()
+      job.resolve(null)
+    }
+  }
+  dispose() {
+    this.disposed = true
+    for (const uri of this.uriToLintJob.keys()) {
+      this.cancel(uri)
+    }
+  }
+  /** Returns null when superseded or canceled; callers must not publish that result. */
   async lint(document, sourcePaths, additionalShellCheckArguments = []) {
+    if (this.disposed) return null
     if (!this._canLint) {
       return { diagnostics: [], codeActions: {} }
     }
     const { uri } = document
-    let debouncedExecuteLint = this.uriToDebouncedExecuteLint[uri]
-    if (!debouncedExecuteLint) {
-      debouncedExecuteLint = (0, async_1.debounce)(
-        this.executeLint.bind(this),
-        DEBOUNCE_MS,
-      )
-      this.uriToDebouncedExecuteLint[uri] = debouncedExecuteLint
-    }
-    return debouncedExecuteLint(document, sourcePaths, additionalShellCheckArguments)
+    this.cancel(uri)
+    return new Promise((resolve, reject) => {
+      const job = {
+        controller: new AbortController(),
+        resolve,
+        maxConcurrent: this.maxConcurrent,
+      }
+      this.uriToLintJob.set(uri, job)
+      job.timeout = setTimeout(() => {
+        Linter.readyJobs.set(job, async () => {
+          const deadline = setTimeout(() => {
+            if (job.controller.signal.aborted) return
+            logger_1.logger.warn(
+              `ShellCheck: timed out after ${this.timeoutMs}ms for ${uri}`,
+            )
+            // Cancel this job, without touching a newer revision of the URI.
+            job.controller.abort()
+            job.resolve(null)
+          }, this.timeoutMs)
+          try {
+            const result = await this.executeLint(
+              job.controller.signal,
+              document,
+              sourcePaths,
+              additionalShellCheckArguments,
+            )
+            resolve(job.controller.signal.aborted ? null : result)
+          } catch (error) {
+            if (job.controller.signal.aborted) resolve(null)
+            else reject(error)
+          } finally {
+            clearTimeout(deadline)
+            if (this.uriToLintJob.get(uri) === job) this.uriToLintJob.delete(uri)
+            // executeLint waits for the child's close event, including after abort.
+            Linter.runningJobs--
+            Linter.drainQueue()
+          }
+        })
+        Linter.drainQueue()
+      }, DEBOUNCE_MS)
+    })
   }
-  async executeLint(document, sourcePaths, additionalShellCheckArguments = []) {
+  async executeLint(signal, document, sourcePaths, additionalShellCheckArguments = []) {
     const documentText = document.getText()
     const dialect = (0, shebang_1.analyzeFile)(document.uri, documentText)
     let shellName
@@ -137,6 +210,7 @@ class Linter {
       ? [...sourcePaths, (0, node_path_1.dirname)(documentPath)]
       : sourcePaths
     const result = await this.runShellCheck(
+      signal,
       documentText,
       shellName,
       effectiveSourcePaths,
@@ -145,11 +219,9 @@ class Linter {
     if (!this._canLint) {
       return { diagnostics: [], codeActions: {} }
     }
-    // Clean up the debounced function
-    delete this.uriToDebouncedExecuteLint[document.uri]
     return mapShellCheckResult({ uri: document.uri, result })
   }
-  async runShellCheck(documentText, shellName, sourcePaths, additionalArgs = []) {
+  async runShellCheck(signal, documentText, shellName, sourcePaths, additionalArgs = []) {
     const sourcePathsArgs = sourcePaths
       .map((folder) => folder.trim())
       .filter((folderName) => folderName)
@@ -172,11 +244,65 @@ class Linter {
     let out = ''
     let err = ''
     const proc = new Promise((resolve, reject) => {
+      const useProcessGroup = process.platform !== 'win32'
+      // The abort listener below owns termination. Passing signal here as well
+      // would race Node's direct-child kill against process-group cleanup.
       const proc = (0, child_process_1.spawn)(this.executablePath, [...args, '-'], {
         cwd: this.cwd,
+        detached: useProcessGroup,
       })
-      proc.on('error', reject)
-      proc.on('close', resolve)
+      let processError
+      let killTimer
+      let escalated = false
+      const kill = (killSignal) => {
+        if (useProcessGroup && proc.pid) {
+          try {
+            // Include children of custom wrappers, even if the wrapper already exited.
+            process.kill(-proc.pid, killSignal)
+          } catch (error) {
+            if (error.code !== 'ESRCH') {
+              logger_1.logger.warn(
+                `ShellCheck: failed to terminate process group: ${String(error)}`,
+              )
+              proc.kill(killSignal)
+            }
+          }
+        } else {
+          proc.kill(killSignal)
+        }
+      }
+      const closeInheritedPipes = () => {
+        // An escaped descendant can keep pipes open after the direct child exits.
+        // Only release those pipes after escalation and the direct child's exit.
+        if (escalated && (proc.exitCode !== null || proc.signalCode !== null)) {
+          proc.stdin.destroy()
+          proc.stdout.destroy()
+          proc.stderr.destroy()
+        }
+      }
+      const forceKill = () => {
+        kill('SIGTERM')
+        killTimer = setTimeout(() => {
+          escalated = true
+          kill('SIGKILL')
+          closeInheritedPipes()
+        }, KILL_GRACE_MS)
+      }
+      signal.addEventListener('abort', forceKill, { once: true })
+      if (signal.aborted) forceKill()
+      proc.on('exit', closeInheritedPipes)
+      proc.on('error', (error) => {
+        processError = error
+      })
+      proc.on('close', (code) => {
+        // Descendants with separate output streams do not keep `close` pending.
+        // Once the canceled wrapper exits, kill any remaining group members.
+        if (signal.aborted && useProcessGroup) kill('SIGKILL')
+        clearTimeout(killTimer)
+        signal.removeEventListener('abort', forceKill)
+        if (processError) reject(processError)
+        else resolve(code)
+      })
       proc.stdout.on('data', (data) => (out += data))
       proc.stderr.on('data', (data) => (err += data))
       proc.stdin.on('error', () => {
@@ -193,7 +319,11 @@ class Linter {
     let exit
     try {
       exit = await proc
+      signal.throwIfAborted()
     } catch (e) {
+      if (signal.aborted && e instanceof Error && e.name === 'AbortError') {
+        throw e
+      }
       // TODO: we could do this up front?
       if (e.code === 'ENOENT') {
         // shellcheck path wasn't found, don't try to lint any more:
@@ -204,8 +334,7 @@ class Linter {
         return { comments: [] }
       }
       throw new Error(
-        `ShellCheck: failed with code ${exit}: ${e}\nout:\n${out}\nerr:\n${err}`,
-        { cause: e },
+        `ShellCheck: failed with code ${exit}: ${String(e)}\nout:\n${out}\nerr:\n${err}`,
       )
     }
     let raw
@@ -213,8 +342,7 @@ class Linter {
       raw = JSON.parse(out)
     } catch (e) {
       throw new Error(
-        `ShellCheck: json parse failed with error ${e}\nout:\n${out}\nerr:\n${err}`,
-        { cause: e },
+        `ShellCheck: json parse failed with error ${String(e)}\nout:\n${out}\nerr:\n${err}`,
       )
     }
     return types_1.ShellCheckResultSchema.parse(raw)

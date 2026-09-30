@@ -1,14 +1,11 @@
 #!/usr/bin/env node
+/* oxlint-disable no-console */
 import * as LSP from 'vscode-languageserver/node'
 
 import BashServer from './server'
 import { DEFAULT_LOG_LEVEL, LOG_LEVEL_ENV_VAR } from './util/logger'
 
-const packageJson = require('../../package')
-const repositoryUrl =
-  typeof packageJson.repository === 'string'
-    ? packageJson.repository
-    : packageJson.repository.url
+const packageJson = require('../../package.json')
 
 const PADDING = 38
 
@@ -30,7 +27,7 @@ ${Object.entries(commandsAndFlags)
 Environment variables:
   ${LOG_LEVEL_ENV_VAR.padEnd(PADDING)} Set the log level (default: ${DEFAULT_LOG_LEVEL})
 
-Further documentation: ${repositoryUrl}`)
+Further documentation: ${packageJson.repository}`)
 }
 
 export function runCli() {

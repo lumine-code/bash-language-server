@@ -60,7 +60,6 @@ exports.forEach = forEach
 exports.range = range
 exports.isDefinition = isDefinition
 exports.isReference = isReference
-exports.isVariableInReadCommand = isVariableInReadCommand
 exports.isExpansion = isExpansion
 exports.findParent = findParent
 exports.findParentOfType = findParentOfType
@@ -103,18 +102,6 @@ function isReference(n) {
     default:
       return false
   }
-}
-function isVariableInReadCommand(n) {
-  if (
-    n.type === 'word' &&
-    n.parent?.type === 'command' &&
-    n.parent.firstChild?.text === 'read' &&
-    !n.text.startsWith('-') &&
-    !/^-.*[dinNptu]$/.test(n.previousSibling?.text ?? '')
-  ) {
-    return true
-  }
-  return false
 }
 function isExpansion(n) {
   switch (n.type) {

@@ -1,4 +1,5 @@
 import * as ChildProcess from 'child_process'
+import { basename, isAbsolute } from 'path'
 
 import { logger } from './logger'
 import { isWindows } from './platform'
@@ -18,6 +19,15 @@ export function execShellScript(
     args.push('--noprofile', '--norc', '-c', body)
   }
 
+  return execProgram(cmd, args, body)
+}
+
+function execProgram(
+  cmd: string,
+  args: string[],
+  description: string,
+  input?: string,
+): Promise<string> {
   const process = ChildProcess.spawn(cmd, args)
 
   return new Promise((resolve, reject) => {
@@ -27,7 +37,7 @@ export function execShellScript(
       if (returnCode === 0) {
         resolve(output)
       } else {
-        reject(`Failed to execute ${body}`)
+        reject(`Failed to execute ${description}`)
       }
     }
 
@@ -37,6 +47,10 @@ export function execShellScript(
 
     process.on('close', handleClose)
     process.on('error', handleClose)
+    if (input !== undefined) {
+      process.stdin.on('error', handleClose)
+      process.stdin.end(input)
+    }
   })
 }
 
@@ -60,7 +74,10 @@ export async function getShellDocumentationWithoutCache({
 }: {
   word: string
 }): Promise<string | null> {
-  if (word.split(' ').length > 1) {
+  const absolutePath = isAbsolute(word)
+  const commandName = absolutePath ? basename(word) : word
+
+  if (!absolutePath && word.split(' ').length > 1) {
     throw new Error(`lookupDocumentation should be given a word, received "${word}"`)
   }
 
@@ -69,16 +86,33 @@ export async function getShellDocumentationWithoutCache({
   }
 
   const DOCUMENTATION_COMMANDS = [
-    { type: 'help', command: `help ${word} | col -bx` },
+    // An absolute path always invokes an external command, never a shell builtin.
+    ...(!absolutePath
+      ? [{ type: 'help', execute: () => execShellScript(`help ${word} | col -bx`) }]
+      : []),
     // We have experimented with setting MANWIDTH to different values for reformatting.
     // The default line width of the terminal works fine for hover, but could be better
     // for completions.
-    { type: 'man', command: `man -P cat ${word} | col -bx` },
+    {
+      type: 'man',
+      execute: async () => {
+        if (absolutePath) {
+          // Pass filenames as arguments rather than shell syntax (also on Windows).
+          const output = await execProgram(
+            'man',
+            ['-P', 'cat', '--', commandName],
+            `man ${commandName}`,
+          )
+          return execProgram('col', ['-bx'], 'col -bx', output)
+        }
+        return execShellScript(`man -P cat ${word} | col -bx`)
+      },
+    },
   ]
 
-  for (const { type, command } of DOCUMENTATION_COMMANDS) {
+  for (const { type, execute } of DOCUMENTATION_COMMANDS) {
     try {
-      const documentation = await execShellScript(command)
+      const documentation = await execute()
       if (documentation) {
         let formattedDocumentation = documentation.trim()
 
@@ -120,16 +154,15 @@ export function formatManOutput(manOutput: string): string {
 /**
  * Only works for one-parameter (serializable) functions.
  */
-export function memorize<TArgument, TResult>(
-  func: (argument: TArgument) => Promise<TResult>,
-): (argument: TArgument) => Promise<TResult> {
-  const cache = new Map<string, TResult>()
+/* oxlint-disable typescript/no-unsafe-function-type */
+export function memorize<T extends Function>(func: T): T {
+  const cache = new Map()
 
-  return async function (arg: TArgument): Promise<TResult> {
+  const returnFunc = async function (arg: any) {
     const cacheKey = JSON.stringify(arg)
 
     if (cache.has(cacheKey)) {
-      return cache.get(cacheKey)!
+      return cache.get(cacheKey)
     }
 
     const result = await func(arg)
@@ -137,6 +170,8 @@ export function memorize<TArgument, TResult>(
     cache.set(cacheKey, result)
     return result
   }
+
+  return returnFunc as any
 }
 
 export const getShellDocumentation = memorize(getShellDocumentationWithoutCache)

@@ -67,19 +67,24 @@ const url = __importStar(require('url'))
 const util_1 = require('util')
 const LSP = __importStar(require('vscode-languageserver/node'))
 const vscode_languageserver_textdocument_1 = require('vscode-languageserver-textdocument')
+const config_1 = require('./config')
 const array_1 = require('./util/array')
 const declarations_1 = require('./util/declarations')
 const fs_1 = require('./util/fs')
+const input_declarations_1 = require('./util/input-declarations')
 const logger_1 = require('./util/logger')
 const lsp_1 = require('./util/lsp')
 const shebang_1 = require('./util/shebang')
 const sourcing = __importStar(require('./util/sourcing'))
 const TreeSitterUtil = __importStar(require('./util/tree-sitter'))
+const BACKGROUND_ANALYSIS_TIMEOUT_MS = 10000
 /**
  * The Analyzer uses the Abstract Syntax Trees (ASTs) that are provided by
  * tree-sitter to find definitions, reference, etc.
  */
 class Analyzer {
+  backgroundAnalysisController
+  backgroundAnalyzedUris = new Set()
   enableSourceErrorDiagnostics
   includeAllWorkspaceSymbols
   parser
@@ -103,30 +108,38 @@ class Analyzer {
   analyze({
     document,
     uri, // NOTE: we don't use document.uri to make testing easier
+    background = false,
   }) {
+    // An opened/on-demand document must survive subsequent background rescans,
+    // including when parsing its new contents fails.
+    if (!background) this.backgroundAnalyzedUris.delete(uri)
     const diagnostics = []
     const fileContent = document.getText()
     const tree = this.parser.parse(fileContent)
-    // `parse` is nullable from web-tree-sitter 0.25 on: it returns null when the
-    // parser carries no language, or when the parse was cancelled. Neither can
-    // happen here — the language is loaded at startup and nothing cancels — but
-    // everything below reads the tree unconditionally, so say so plainly rather
-    // than dereferencing null.
     if (!tree) {
-      logger_1.logger.error(`Error while parsing ${uri}: the parser returned no tree`)
-      return diagnostics
+      throw new Error(`Failed to parse ${uri}: no syntax tree returned`)
     }
-    const globalDeclarations = (0, declarations_1.getGlobalDeclarations)({ tree, uri })
-    const sourceCommands = sourcing.getSourceCommands({
-      fileUri: uri,
-      rootPath: this.workspaceFolder,
-      tree,
-    })
+    let globalDeclarations
+    let sourceCommands
+    try {
+      globalDeclarations = (0, declarations_1.getGlobalDeclarations)({ tree, uri })
+      sourceCommands = sourcing.getSourceCommands({
+        fileUri: uri,
+        rootPath: this.workspaceFolder,
+        tree,
+      })
+    } catch (error) {
+      tree.delete()
+      throw error
+    }
     const sourcedUris = new Set(
       sourceCommands
         .map((sourceCommand) => sourceCommand.uri)
         .filter((uri) => uri !== null),
     )
+    // The AST lives in WebAssembly memory. Waiting for JavaScript finalizers
+    // lets that memory grow substantially during repeated edits.
+    this.uriToAnalyzedDocument[uri]?.tree.delete()
     this.uriToAnalyzedDocument[uri] = {
       document,
       globalDeclarations,
@@ -134,6 +147,7 @@ class Analyzer {
       sourceCommands: sourceCommands.filter((sourceCommand) => !sourceCommand.error),
       tree,
     }
+    if (background) this.backgroundAnalyzedUris.add(uri)
     if (!this.includeAllWorkspaceSymbols) {
       sourceCommands
         .filter((sourceCommand) => sourceCommand.error)
@@ -167,19 +181,24 @@ class Analyzer {
     }
     return diagnostics
   }
-  /**
-   * Initiates a background analysis of the files in the workspaceFolder to
-   * enable features across files.
-   *
-   * NOTE that when the source aware feature is enabled files are also parsed
-   * when they are found.
-   */
-  async initiateBackgroundAnalysis({ backgroundAnalysisMaxFiles, globPattern }) {
+  cancelBackgroundAnalysis() {
+    this.backgroundAnalysisController?.abort()
+  }
+  /** Discover and analyze workspace files within one elapsed-time budget. */
+  async initiateBackgroundAnalysis({
+    backgroundAnalysisMaxFiles,
+    backgroundAnalysisIgnore = (0, config_1.getDefaultConfiguration)()
+      .backgroundAnalysisIgnore,
+    globPattern,
+  }) {
+    this.cancelBackgroundAnalysis()
+    const controller = new AbortController()
+    this.backgroundAnalysisController = controller
+    const { signal } = controller
     const rootPath = this.workspaceFolder
-    if (!rootPath) {
-      return { filesParsed: 0 }
-    }
+    if (!rootPath) return { filesParsed: 0 }
     if (backgroundAnalysisMaxFiles <= 0) {
+      this.evictBackgroundDocuments(new Set())
       logger_1.logger.info(
         `BackgroundAnalysis: skipping as backgroundAnalysisMaxFiles was 0...`,
       )
@@ -188,56 +207,141 @@ class Analyzer {
     logger_1.logger.info(
       `BackgroundAnalysis: resolving glob "${globPattern}" inside "${rootPath}"...`,
     )
-    const lookupStartTime = Date.now()
-    const getTimePassed = () => `${(Date.now() - lookupStartTime) / 1000} seconds`
-    let filePaths
-    try {
-      filePaths = await (0, fs_1.getFilePaths)({
-        globPattern,
-        rootPath,
-        maxItems: backgroundAnalysisMaxFiles,
-      })
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : error
+    const started = Date.now()
+    const deadline = started + BACKGROUND_ANALYSIS_TIMEOUT_MS
+    const expire = () => {
+      if (signal.aborted) return
       logger_1.logger.warn(
-        `BackgroundAnalysis: failed resolved glob "${globPattern}". The experience across files will be degraded. Error: ${errorMessage}`,
+        `BackgroundAnalysis: stopped after ${BACKGROUND_ANALYSIS_TIMEOUT_MS}ms; workspace symbols may be incomplete. Exclude large folders with backgroundAnalysisIgnore or narrow globPattern.`,
       )
-      return { filesParsed: 0 }
+      controller.abort()
     }
-    logger_1.logger.info(
-      `BackgroundAnalysis: Glob resolved with ${filePaths.length} files after ${getTimePassed()}`,
-    )
-    for (const filePath of filePaths) {
-      const uri = url.pathToFileURL(filePath).href
+    const stopped = () => {
+      // Synchronous parsing can delay the timer; check between parses as well.
+      if (Date.now() >= deadline) expire()
+      return signal.aborted
+    }
+    const timer = setTimeout(expire, BACKGROUND_ANALYSIS_TIMEOUT_MS)
+    const getTimePassed = () => `${(Date.now() - started) / 1000} seconds`
+    let filesParsed = 0
+    try {
+      // fast-glob traverses hidden directories for globstars even though the
+      // default pattern cannot match their files. Only prune for that pattern:
+      // custom globs may deliberately target hidden directories.
+      let filePaths
       try {
-        const fileContent = await fs.promises.readFile(filePath, 'utf8')
-        const fileDialect = (0, shebang_1.analyzeFile)(uri, fileContent)
-        // Bail if the dialect is unsupported
-        if (!fileDialect.dialect) {
-          logger_1.logger.info(
-            `BackgroundAnalysis: Skipping file ${uri} with dialect "${JSON.stringify(fileDialect)}"`,
-          )
-          continue
-        }
-        this.analyze({
-          document: vscode_languageserver_textdocument_1.TextDocument.create(
-            uri,
-            'shell',
-            1,
-            fileContent,
-          ),
-          uri,
+        filePaths = await (0, fs_1.getFilePaths)({
+          globPattern,
+          rootPath,
+          maxItems: backgroundAnalysisMaxFiles,
+          timeoutMs: BACKGROUND_ANALYSIS_TIMEOUT_MS,
+          ignore: backgroundAnalysisIgnore,
+          skipHiddenEntries:
+            globPattern === (0, config_1.getDefaultConfiguration)().globPattern,
+          signal,
+          onLimit: (reason) => {
+            if (reason === 'time') expire()
+            else
+              logger_1.logger.warn(
+                `BackgroundAnalysis: stopped discovery at the directories limit; workspace symbols may be incomplete. Exclude large folders with backgroundAnalysisIgnore or narrow globPattern.`,
+              )
+          },
         })
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : error
-        logger_1.logger.warn(
-          `BackgroundAnalysis: Failed analyzing ${uri}. Error: ${errorMessage}`,
+        if (!signal.aborted)
+          logger_1.logger.warn(
+            `BackgroundAnalysis: failed resolving glob "${globPattern}". The experience across files will be degraded. Error: ${String(error)}`,
+          )
+        return { filesParsed }
+      }
+      if (stopped()) return { filesParsed }
+      this.evictBackgroundDocuments(
+        new Set(filePaths.map((p) => url.pathToFileURL(p).href)),
+      )
+      logger_1.logger.info(
+        `BackgroundAnalysis: Glob resolved with ${filePaths.length} files after ${getTimePassed()}`,
+      )
+      for (const filePath of filePaths) {
+        if (stopped()) break
+        const uri = url.pathToFileURL(filePath).href
+        const isOnDemand = () =>
+          this.uriToAnalyzedDocument[uri] && !this.backgroundAnalyzedUris.has(uri)
+        // Do not replace an open document's unsaved contents with its disk copy.
+        if (isOnDemand()) continue
+        try {
+          let cancelRead = () => undefined
+          const canceled = new Promise((resolve) => {
+            cancelRead = () => resolve(undefined)
+            signal.addEventListener('abort', cancelRead, { once: true })
+          })
+          let fileContent
+          try {
+            // AbortSignal stops readFile's buffering, but an OS read may still
+            // be pending. Settle the background pass immediately on cancellation.
+            fileContent = await Promise.race([
+              fs.promises.readFile(filePath, { encoding: 'utf8', signal }),
+              canceled,
+            ])
+          } finally {
+            signal.removeEventListener('abort', cancelRead)
+          }
+          if (stopped() || fileContent === undefined) break
+          // The document may have been opened or edited while its read awaited I/O.
+          if (isOnDemand()) continue
+          const fileDialect = (0, shebang_1.analyzeFile)(uri, fileContent)
+          if (!fileDialect.dialect) {
+            logger_1.logger.info(
+              `BackgroundAnalysis: Skipping file ${uri} with dialect "${JSON.stringify(fileDialect)}"`,
+            )
+            continue
+          }
+          this.analyze({
+            document: vscode_languageserver_textdocument_1.TextDocument.create(
+              uri,
+              'shell',
+              1,
+              fileContent,
+            ),
+            uri,
+            background: true,
+          })
+          filesParsed++
+        } catch (error) {
+          if (stopped()) break
+          logger_1.logger.warn(
+            `BackgroundAnalysis: Failed analyzing ${uri}. Error: ${String(error)}`,
+          )
+        }
+      }
+      // Rereading background files can remove source relationships. Recompute
+      // the retained dependency graph, without cleanup from a canceled old pass.
+      if (!stopped()) {
+        this.evictBackgroundDocuments(
+          new Set(filePaths.map((p) => url.pathToFileURL(p).href)),
         )
       }
+      logger_1.logger.info(`BackgroundAnalysis: Completed after ${getTimePassed()}.`)
+      return { filesParsed }
+    } finally {
+      clearTimeout(timer)
+      if (this.backgroundAnalysisController === controller) {
+        this.backgroundAnalysisController = undefined
+      }
     }
-    logger_1.logger.info(`BackgroundAnalysis: Completed after ${getTimePassed()}.`)
-    return {
-      filesParsed: filePaths.length,
+  }
+  evictBackgroundDocuments(keep) {
+    // Preserve dependencies of opened/on-demand documents, even if a previous
+    // background scan happened to analyze those dependencies first.
+    for (const uri of Object.keys(this.uriToAnalyzedDocument)) {
+      if (!this.backgroundAnalyzedUris.has(uri)) {
+        for (const sourcedUri of this.findAllSourcedUris({ uri })) keep.add(sourcedUri)
+      }
+    }
+    for (const uri of this.backgroundAnalyzedUris) {
+      if (keep.has(uri)) continue
+      this.uriToAnalyzedDocument[uri]?.tree.delete()
+      delete this.uriToAnalyzedDocument[uri]
+      this.backgroundAnalyzedUris.delete(uri)
     }
   }
   /**
@@ -359,7 +463,10 @@ class Analyzer {
     }
     return {
       declaration: declaration
-        ? LSP.Location.create(otherInfo.currentUri, TreeSitterUtil.range(declaration))
+        ? LSP.Location.create(
+            otherInfo.currentUri,
+            (0, input_declarations_1.variableNameRange)(declaration),
+          )
         : null,
       parent: parent
         ? LSP.Location.create(params.uri, TreeSitterUtil.range(parent))
@@ -395,14 +502,20 @@ class Analyzer {
     const locations = []
     TreeSitterUtil.forEach(tree.rootNode, (n) => {
       let namedNode = null
-      if (TreeSitterUtil.isReference(n)) {
+      if ((0, input_declarations_1.getInputVariableDeclaration)(n)) {
+        namedNode = n
+      } else if (TreeSitterUtil.isReference(n)) {
         // NOTE: a reference can be a command, variable, function, etc.
         namedNode = n.firstNamedChild || n
       } else if (TreeSitterUtil.isDefinition(n)) {
         namedNode = n.firstNamedChild
       }
-      if (namedNode && namedNode.text === word) {
-        const range = TreeSitterUtil.range(namedNode)
+      if (
+        namedNode &&
+        ((0, input_declarations_1.getInputVariableDeclaration)(namedNode)?.name ??
+          namedNode.text) === word
+      ) {
+        const range = (0, input_declarations_1.variableNameRange)(namedNode)
         const alreadyInLocations = locations.some((loc) => {
           return (0, util_1.isDeepStrictEqual)(loc.range, range)
         })
@@ -434,17 +547,15 @@ class Analyzer {
     }
     const typeOfDescendants =
       kind === LSP.SymbolKind.Variable
-        ? ['variable_name', 'word']
+        ? ['variable_name', 'word', 'string', 'raw_string']
         : ['function_definition', 'command_name']
     const startPosition = start
       ? { row: start.line, column: start.character }
       : baseNode.startPosition
     const ignoredRanges = []
     const filterVariables = (n) => {
-      if (
-        n.text !== word ||
-        (n.type === 'word' && !TreeSitterUtil.isVariableInReadCommand(n))
-      ) {
+      const input = (0, input_declarations_1.getInputVariableDeclaration)(n)
+      if ((input?.name ?? n.text) !== word || (n.type !== 'variable_name' && !input)) {
         return false
       }
       const definition = TreeSitterUtil.findParentOfType(n, 'variable_assignment')
@@ -479,8 +590,8 @@ class Analyzer {
             ['local', 'declare', 'typeset'].includes(
               declarationCommand?.firstChild?.text,
             ))) ||
-        // Local variables within `read` command that are typed as `word`
-        (parent.type === 'subshell' && n.type === 'word')
+        // Input destinations belong to their enclosing subshell.
+        (parent.type === 'subshell' && !!input)
       if (isLocal) {
         if (includeDeclaration) {
           ignoredRanges.push(TreeSitterUtil.range(parent))
@@ -516,7 +627,7 @@ class Analyzer {
         if (n.type === 'function_definition' && n.firstNamedChild) {
           return TreeSitterUtil.range(n.firstNamedChild)
         }
-        return TreeSitterUtil.range(n)
+        return (0, input_declarations_1.variableNameRange)(n)
       })
   }
   getAllVariables({ position, uri }) {
@@ -541,6 +652,9 @@ class Analyzer {
    */
   getDocument(uri) {
     return this.uriToAnalyzedDocument[uri]?.document
+  }
+  getRootNode(uri) {
+    return this.uriToAnalyzedDocument[uri]?.tree.rootNode
   }
   // TODO: move somewhere else than the analyzer...
   async getExplainshellDocumentation({ params, endpoint }) {
@@ -577,7 +691,12 @@ class Analyzer {
           helpItem.start <= offsetOfMousePointerInCommand &&
           offsetOfMousePointerInCommand < helpItem.end,
       )
-      return { helpHTML: match && match.helpHTML }
+      const helpHTML =
+        match?.helpHTML ??
+        (match?.helpclass
+          ? explainshellResponse.helptext?.find(([, id]) => id === match.helpclass)?.[0]
+          : undefined)
+      return { helpHTML }
     }
   }
   /**
@@ -623,9 +742,8 @@ class Analyzer {
     })
     // iterate on every line above and including
     // the current line until getComment returns null
-    while (true) {
-      const currentComment = getComment(currentLine)
-      if (currentComment === null) break
+    let currentComment = ''
+    while ((currentComment = getComment(currentLine)) !== null) {
       commentBlock.push(currentComment)
       commentBlockIndex -= 1
       currentLine = doc.getText({
@@ -649,6 +767,17 @@ class Analyzer {
    */
   wordAtPoint(uri, line, column) {
     const node = this.nodeAtPoint(uri, line, column)
+    if (node) {
+      const input =
+        (0, input_declarations_1.getInputVariableDeclaration)(node) ||
+        (node.parent &&
+          (0, input_declarations_1.getInputVariableDeclaration)(node.parent))
+      if (
+        input &&
+        (0, lsp_1.isPositionIncludedInRange)({ line, character: column }, input.range)
+      )
+        return input.name
+    }
     if (!node || node.childCount > 0 || node.text.trim() === '') {
       return null
     }
@@ -684,10 +813,13 @@ class Analyzer {
             : LSP.SymbolKind.Function,
       }
     }
-    if (TreeSitterUtil.isVariableInReadCommand(node)) {
+    const input =
+      (0, input_declarations_1.getInputVariableDeclaration)(node) ||
+      (node.parent && (0, input_declarations_1.getInputVariableDeclaration)(node.parent))
+    if (input && (0, lsp_1.isPositionIncludedInRange)(params.position, input.range)) {
       return {
-        word: node.text,
-        range: TreeSitterUtil.range(node),
+        word: input.name,
+        range: input.range,
         kind: LSP.SymbolKind.Variable,
       }
     }
@@ -803,7 +935,7 @@ class Analyzer {
             uri,
           })
         } catch (err) {
-          logger_1.logger.warn(`Error while analyzing file ${uri}: ${err}`)
+          logger_1.logger.warn(`Error while analyzing file ${uri}: ${String(err)}`)
           return false
         }
       }
@@ -839,11 +971,30 @@ class Analyzer {
           })
           Object.keys(localDeclarations).map((name) => {
             const symbolsMatchingWord = localDeclarations[name]
-            // Find the latest definition
+            // Prefer the latest preceding definition, with the first following
+            // function as a fallback: a function body can call a function that
+            // is declared later in the file.
             let closestSymbol = null
+            let followingFunction = null
             symbolsMatchingWord.forEach((symbol) => {
-              // Skip if the symbol is defined in the current file after the requested position
-              if (symbol.location.range.start.line > position.line) {
+              if (
+                symbol.location.range.start.line > position.line ||
+                (symbol.kind === LSP.SymbolKind.Variable &&
+                  symbol.location.range.start.line === position.line &&
+                  symbol.location.range.start.character > position.character)
+              ) {
+                if (
+                  symbol.kind === LSP.SymbolKind.Function &&
+                  !symbol.containerName &&
+                  node?.type === 'word' &&
+                  node.parent?.type === 'command_name' &&
+                  TreeSitterUtil.findParentOfType(node, 'function_definition') &&
+                  (!followingFunction ||
+                    symbol.location.range.start.line <
+                      followingFunction.location.range.start.line)
+                ) {
+                  followingFunction = symbol
+                }
                 return
               }
               if (
@@ -853,8 +1004,9 @@ class Analyzer {
                 closestSymbol = symbol
               }
             })
-            if (closestSymbol) {
-              symbols.push(closestSymbol)
+            const symbol = closestSymbol || followingFunction
+            if (symbol) {
+              symbols.push(symbol)
             }
           })
         }

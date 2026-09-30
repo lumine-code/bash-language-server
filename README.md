@@ -2,51 +2,41 @@
 
 Bash language server maintained by lumine-code.
 
-This is a source-maintained fork of [bash-lsp/bash-language-server](https://github.com/bash-lsp/bash-language-server). It brings an IDE-like experience to Bash scripts using the [Tree Sitter parser][tree-sitter-bash], with optional [explainshell][explainshell], [shellcheck][shellcheck], and [shfmt][shfmt] integration. The fork tracks the upstream server while keeping its dependency chain compatible with supported Lumine runtimes.
+This is a source-maintained fork of [bash-lsp/bash-language-server](https://github.com/bash-lsp/bash-language-server). It brings an IDE-like experience to Bash scripts using the [Tree Sitter parser][tree-sitter-bash], with optional [explainshell][explainshell], [shellcheck][shellcheck], and [shfmt][shfmt] integration. The server source, parser, and tests are synchronized with [upstream commit eee7729](https://github.com/bash-lsp/bash-language-server/commit/eee772929fb300e4798f3aa55428aafa66217a54), retaining a small compatibility layer for Windows and the supported Node.js runtime.
 
 Documentation around configuration variables can be found in [config.ts](https://github.com/lumine-code/bash-language-server/blob/master/server/src/config.ts).
 
 ## Features
 
-- Jump to declaration
-- Find references
-- Code Outline & Show Symbols
-- Highlight occurrences
-- Code completion
-- Simple diagnostics reporting
-- Documentation for symbols on hover
-- Workspace symbols
-- Rename symbol
-- Format document
-
-To be implemented:
-
-- Better jump to declaration and find references based on scope
+- **Completion**: offers symbols, shell builtins, executable names, snippets, and command options.
+- **Navigation**: finds declarations, references, and matching occurrences.
+- **Symbols**: lists document and workspace symbols.
+- **Rename**: prepares and applies symbol renames.
+- **Diagnostics**: reports parser findings and optional ShellCheck diagnostics.
+- **Quick fixes**: supplies ShellCheck fixes through LSP code actions.
+- **Formatting**: formats scripts with optional shfmt and EditorConfig settings.
+- **Hover**: shows symbol comments and command documentation, with optional explainshell integration.
 
 ## Installation
 
-Install the server globally from npm:
+The [ide-bash][ide-bash] adapter supplies this server as an immutable Git dependency. The fork has no published npm release yet. To run it independently, install and build a source checkout:
 
 ```sh
-npm install --global @lumine-code/bash-language-server
+npm ci --ignore-scripts
+npm run build
+node server/out/cli.js --help
 ```
 
-Alternatively, bash-language-server may be distributed directly by your Linux distro, for example on Fedora based distros:
+To expose the `bash-language-server` command for another LSP client, link the built checkout:
 
 ```sh
-dnf install -y nodejs-bash-language-server
+npm link
 ```
 
-Or on Ubuntu with snap:
+Start the server over standard input and output with:
 
 ```sh
-sudo snap install bash-language-server --classic
-```
-
-To verify that everything is working:
-
-```sh
-bash-language-server --help
+bash-language-server start
 ```
 
 Node.js 24 or newer is required.
@@ -57,11 +47,13 @@ Install [ShellCheck][shellcheck] to enable linting. When it is available, bash-l
 
 Install [shfmt][shfmt] for document formatting. Editors can invoke it explicitly or on save.
 
+On Windows, executable completion reads the platform PATH separator and PATHEXT extensions, and treats extensionless names such as `git` as aliases for discovered executables such as `git.exe`. Command-option completion uses Bash explicitly; install Bash on PATH to enable that optional feature. Missing documentation or completion tools leave the rest of the server available.
+
 ### Clients
 
 The following editors and IDEs have available clients:
 
-- Atom ([ide-bash][ide-bash])
+- Lumine ([ide-bash][ide-bash])
 - Eclipse ([ShellWax](https://marketplace.eclipse.org/content/shellwax))
 - Emacs ([see below](#emacs))
 - [Helix](https://helix-editor.com/) (built-in support)
@@ -190,12 +182,12 @@ The minimum logging level for the server can be adjusted using the `BASH_IDE_LOG
 
 ## Development Guide
 
-Please see [docs/development-guide][dev-guide] for more information.
+See the [development guide][dev-guide] for source layout, npm workflows, portable tests, and testing through the editor. The [release guide](docs/releasing.md) describes the fork's single-package release process.
 
 [tree-sitter]: https://github.com/tree-sitter/tree-sitter
 [tree-sitter-bash]: https://github.com/tree-sitter/tree-sitter-bash
 [vscode-marketplace]: https://marketplace.visualstudio.com/items?itemName=mads-hartmann.bash-ide-vscode
-[dev-guide]: https://github.com/bash-lsp/bash-language-server/blob/master/docs/development-guide.md
+[dev-guide]: docs/development-guide.md
 [ide-bash]: https://github.com/lumine-code/ide-bash
 [sublime-text-lsp]: https://packagecontrol.io/packages/LSP-bash
 [explainshell]: https://explainshell.com/

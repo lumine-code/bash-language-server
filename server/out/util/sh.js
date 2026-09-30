@@ -62,6 +62,7 @@ exports.getShellDocumentationWithoutCache = getShellDocumentationWithoutCache
 exports.formatManOutput = formatManOutput
 exports.memorize = memorize
 const ChildProcess = __importStar(require('child_process'))
+const path_1 = require('path')
 const logger_1 = require('./logger')
 const platform_1 = require('./platform')
 /**
@@ -74,6 +75,9 @@ function execShellScript(body, cmd = (0, platform_1.isWindows)() ? 'cmd.exe' : '
   } else {
     args.push('--noprofile', '--norc', '-c', body)
   }
+  return execProgram(cmd, args, body)
+}
+function execProgram(cmd, args, description, input) {
   const process = ChildProcess.spawn(cmd, args)
   return new Promise((resolve, reject) => {
     let output = ''
@@ -81,7 +85,7 @@ function execShellScript(body, cmd = (0, platform_1.isWindows)() ? 'cmd.exe' : '
       if (returnCode === 0) {
         resolve(output)
       } else {
-        reject(`Failed to execute ${body}`)
+        reject(`Failed to execute ${description}`)
       }
     }
     process.stdout.on('data', (buffer) => {
@@ -89,6 +93,10 @@ function execShellScript(body, cmd = (0, platform_1.isWindows)() ? 'cmd.exe' : '
     })
     process.on('close', handleClose)
     process.on('error', handleClose)
+    if (input !== undefined) {
+      process.stdin.on('error', handleClose)
+      process.stdin.end(input)
+    }
   })
 }
 // Currently only reserved words where documentation doesn't make sense.
@@ -106,22 +114,41 @@ const WORDS_WITHOUT_DOCUMENTATION = new Set([
  * Get documentation for the given word by using help and man.
  */
 async function getShellDocumentationWithoutCache({ word }) {
-  if (word.split(' ').length > 1) {
+  const absolutePath = (0, path_1.isAbsolute)(word)
+  const commandName = absolutePath ? (0, path_1.basename)(word) : word
+  if (!absolutePath && word.split(' ').length > 1) {
     throw new Error(`lookupDocumentation should be given a word, received "${word}"`)
   }
   if (WORDS_WITHOUT_DOCUMENTATION.has(word)) {
     return null
   }
   const DOCUMENTATION_COMMANDS = [
-    { type: 'help', command: `help ${word} | col -bx` },
+    // An absolute path always invokes an external command, never a shell builtin.
+    ...(!absolutePath
+      ? [{ type: 'help', execute: () => execShellScript(`help ${word} | col -bx`) }]
+      : []),
     // We have experimented with setting MANWIDTH to different values for reformatting.
     // The default line width of the terminal works fine for hover, but could be better
     // for completions.
-    { type: 'man', command: `man -P cat ${word} | col -bx` },
+    {
+      type: 'man',
+      execute: async () => {
+        if (absolutePath) {
+          // Pass filenames as arguments rather than shell syntax (also on Windows).
+          const output = await execProgram(
+            'man',
+            ['-P', 'cat', '--', commandName],
+            `man ${commandName}`,
+          )
+          return execProgram('col', ['-bx'], 'col -bx', output)
+        }
+        return execShellScript(`man -P cat ${word} | col -bx`)
+      },
+    },
   ]
-  for (const { type, command } of DOCUMENTATION_COMMANDS) {
+  for (const { type, execute } of DOCUMENTATION_COMMANDS) {
     try {
-      const documentation = await execShellScript(command)
+      const documentation = await execute()
       if (documentation) {
         let formattedDocumentation = documentation.trim()
         if (type === 'man') {
@@ -154,9 +181,10 @@ function formatManOutput(manOutput) {
 /**
  * Only works for one-parameter (serializable) functions.
  */
+/* oxlint-disable typescript/no-unsafe-function-type */
 function memorize(func) {
   const cache = new Map()
-  return async function (arg) {
+  const returnFunc = async function (arg) {
     const cacheKey = JSON.stringify(arg)
     if (cache.has(cacheKey)) {
       return cache.get(cacheKey)
@@ -165,6 +193,7 @@ function memorize(func) {
     cache.set(cacheKey, result)
     return result
   }
+  return returnFunc
 }
 exports.getShellDocumentation = memorize(getShellDocumentationWithoutCache)
 //# sourceMappingURL=sh.js.map

@@ -2,9 +2,61 @@ import { z } from 'zod'
 
 import { DEFAULT_LOG_LEVEL, LOG_LEVEL_ENV_VAR, LOG_LEVELS } from './util/logger'
 
+export const ShfmtConfigSchema = z.object({
+  // Controls the executable used for Shfmt formatting. An empty string will disable formatting
+  path: z.string().trim().default('shfmt'),
+
+  // Additional Shfmt arguments. Note that common arguments can be configured via the other settings.
+  additionalArguments: z
+    .preprocess((arg) => {
+      let argsList: unknown[] = []
+      if (typeof arg === 'string') {
+        argsList = arg.split(' ')
+      } else if (Array.isArray(arg)) {
+        argsList = arg
+      } else {
+        return arg
+      }
+
+      return argsList
+        .map((s) => (typeof s === 'string' ? s.trim() : s))
+        .filter((s) => s !== '')
+    }, z.array(z.string()))
+    .default([]),
+
+  // Ignore shfmt config options in .editorconfig (always use language server config)
+  ignoreEditorconfig: z.boolean().default(false),
+
+  // Language dialect to use when parsing (bash/posix/mksh/bats).
+  languageDialect: z.enum(['auto', 'bash', 'posix', 'mksh', 'bats']).default('auto'),
+
+  // Allow boolean operators (like && and ||) to start a line.
+  binaryNextLine: z.boolean().default(false),
+
+  // Indent patterns in case statements.
+  caseIndent: z.boolean().default(false),
+
+  // Place function opening braces on a separate line.
+  funcNextLine: z.boolean().default(false),
+
+  // (Deprecated) Keep column alignment padding.
+  keepPadding: z.boolean().default(false),
+
+  // Simplify code before formatting.
+  simplifyCode: z.boolean().default(false),
+
+  // Follow redirection operators with a space.
+  spaceRedirects: z.boolean().default(false),
+})
+
 export const ConfigSchema = z.object({
   // Maximum number of files to analyze in the background. Set to 0 to disable background analysis.
   backgroundAnalysisMaxFiles: z.number().int().min(0).default(500),
+
+  // Glob patterns excluded from background file discovery. Sourced/open files remain available on demand.
+  backgroundAnalysisIgnore: z
+    .array(z.string())
+    .default(['**/node_modules/**', '**/.git/**']),
 
   // Enable diagnostics for source errors. Ignored if includeAllWorkspaceSymbols is true.
   enableSourceErrorDiagnostics: z.boolean().default(false),
@@ -32,52 +84,44 @@ export const ConfigSchema = z.object({
   // Additional ShellCheck arguments. Note that we already add the following arguments: --shell, --format, and --external-sources (if shellcheckExternalSources is true).
   shellcheckArguments: z
     .preprocess((arg) => {
-      let argsList: string[] = []
+      let argsList: unknown[] = []
       if (typeof arg === 'string') {
         argsList = arg.split(' ')
       } else if (Array.isArray(arg)) {
-        argsList = arg as string[]
+        argsList = arg
+      } else {
+        return arg
       }
 
-      return argsList.map((s) => s.trim()).filter((s) => s.length > 0)
+      return argsList
+        .map((s) => (typeof s === 'string' ? s.trim() : s))
+        .filter((s) => s !== '')
     }, z.array(z.string()))
     .default([]),
 
   // Controls the executable used for ShellCheck linting information. An empty string will disable linting.
   shellcheckPath: z.string().trim().default('shellcheck'),
 
-  shfmt: z
-    .object({
-      // Controls the executable used for Shfmt formatting. An empty string will disable formatting
-      path: z.string().trim().default('shfmt'),
-
-      // Ignore shfmt config options in .editorconfig (always use language server config)
-      ignoreEditorconfig: z.boolean().default(false),
-
-      // Language dialect to use when parsing (bash/posix/mksh/bats).
-      languageDialect: z.enum(['auto', 'bash', 'posix', 'mksh', 'bats']).default('auto'),
-
-      // Allow boolean operators (like && and ||) to start a line.
-      binaryNextLine: z.boolean().default(false),
-
-      // Indent patterns in case statements.
-      caseIndent: z.boolean().default(false),
-
-      // Place function opening braces on a separate line.
-      funcNextLine: z.boolean().default(false),
-
-      // (Deprecated) Keep column alignment padding.
-      keepPadding: z.boolean().default(false),
-
-      // Simplify code before formatting.
-      simplifyCode: z.boolean().default(false),
-
-      // Follow redirection operators with a space.
-      spaceRedirects: z.boolean().default(false),
-    })
-    .prefault({}),
+  shfmt: ShfmtConfigSchema.prefault({}),
 })
 
+// Initialization options override only supplied settings, preserving environment defaults.
+export const InitializationOptionsSchema = partialWithoutDefaults(ConfigSchema).extend({
+  shfmt: partialWithoutDefaults(ShfmtConfigSchema).optional(),
+})
+
+// Zod 4 applies defaults even inside optional fields. Initialization options must
+// only include supplied settings so they do not overwrite environment defaults.
+function partialWithoutDefaults<T extends Record<string, z.ZodDefault | z.ZodPrefault>>(
+  schema: z.ZodObject<T>,
+) {
+  const shape = Object.fromEntries(
+    Object.entries(schema.shape).map(([key, value]) => [key, value.unwrap()]),
+  ) as { [K in keyof T]: ReturnType<T[K]['unwrap']> }
+  return z.object(shape).partial()
+}
+
+export type ShfmtConfig = z.infer<typeof ShfmtConfigSchema>
 export type Config = z.infer<typeof ConfigSchema>
 
 export function getConfigFromEnvironmentVariables(): {

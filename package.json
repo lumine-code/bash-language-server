@@ -14,14 +14,15 @@
     "server/tree-sitter-bash.wasm"
   ],
   "scripts": {
-    "build": "tsc -p server/tsconfig.json && node -e \"require('node:fs').copyFileSync('server/src/get-options.sh', 'server/out/get-options.sh')\" && prettier --write \"server/out/**/*.js\"",
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand",
-    "test:portable": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --testPathIgnorePatterns=\"server/src/__tests__/server.test.ts|server/src/shellcheck/__tests__/index.test.ts|server/src/shfmt/__tests__/index.test.ts|server/src/util/__tests__/sh.test.ts\"",
-    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --coverage",
-    "lint": "eslint server/src scripts/*.js eslint.config.js --max-warnings 0",
-    "format": "prettier --write package.json tsconfig.json server/tsconfig.json server/src scripts/*.js eslint.config.js .github README.md CHANGELOG.md",
-    "format:check": "prettier --check package.json tsconfig.json server/tsconfig.json server/src scripts/*.js eslint.config.js .github README.md CHANGELOG.md",
-    "verify": "npm run lint && npm run format:check && npm test && npm run build && npm run verify:package",
+    "build": "tsc -p server/tsconfig.json && node -e \"const fs = require('node:fs'); fs.copyFileSync('server/src/get-options.sh', 'server/out/get-options.sh'); fs.chmodSync('server/out/get-options.sh', 0o755)\" && prettier --write \"server/out/**/*.js\"",
+    "test": "vitest run",
+    "test:portable": "vitest run --mode portable",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "lint": "eslint server/src testing scripts/*.js eslint.config.js vitest.config.mts --max-warnings 0",
+    "format": "prettier --write package.json tsconfig.json tsconfig.test.json server/tsconfig.json server/src \"testing/*.ts\" scripts/*.js eslint.config.js vitest.config.mts .github README.md CHANGELOG.md",
+    "format:check": "prettier --check package.json tsconfig.json tsconfig.test.json server/tsconfig.json server/src \"testing/*.ts\" scripts/*.js eslint.config.js vitest.config.mts .github README.md CHANGELOG.md",
+    "verify": "npm run lint && npm run format:check && npm run typecheck && npm test && npm run build && npm run verify:package",
     "verify:package": "node scripts/verify-package.js"
   },
   "repository": "https://github.com/lumine-code/bash-language-server",
@@ -57,52 +58,16 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/fuzzy-search": "2.1.5",
-    "@types/jest": "30.0.0",
     "@types/node": "^24.13.3",
     "@types/turndown": "5.0.6",
     "@types/urijs": "1.19.26",
+    "@vitest/coverage-v8": "5.0.2",
     "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.12.0",
-    "jest": "30.5.2",
     "prettier": "^3.9.9",
-    "ts-jest": "29.4.14",
-    "typescript": "5.9.3",
-    "typescript-eslint": "8.70.1"
-  },
-  "jest": {
-    "preset": "ts-jest",
-    "testEnvironment": "node",
-    "clearMocks": true,
-    "moduleFileExtensions": [
-      "js",
-      "json",
-      "node",
-      "ts"
-    ],
-    "modulePathIgnorePatterns": [
-      "<rootDir>/server/out",
-      "<rootDir>/vscode-client/out"
-    ],
-    "transform": {
-      "\\.ts$": [
-        "ts-jest",
-        {
-          "tsconfig": "./server/tsconfig.json"
-        }
-      ]
-    },
-    "testMatch": [
-      "<rootDir>/server/src/**/__tests__/*.ts"
-    ],
-    "collectCoverageFrom": [
-      "server/src/**/*.ts",
-      "!server/src/**/__tests__/**"
-    ],
-    "coverageReporters": [
-      "text-summary",
-      "lcov",
-      "html"
-    ]
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.70.1",
+    "vitest": "5.0.2"
   }
 }

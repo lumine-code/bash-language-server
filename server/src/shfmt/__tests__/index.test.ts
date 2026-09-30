@@ -1,18 +1,36 @@
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { FormattingOptions } from 'vscode-languageserver/node'
 import { TextDocument } from 'vscode-languageserver-textdocument'
 
 import { FIXTURE_DOCUMENT, FIXTURE_FOLDER } from '../../../../testing/fixtures'
+import { ShfmtConfig } from '../../config'
 import { Logger } from '../../util/logger'
 import { Formatter } from '../index'
 
-jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {
+vi.spyOn(Logger.prototype, 'log').mockImplementation(() => {
   // noop
 })
-const loggerWarn = jest.spyOn(Logger.prototype, 'warn')
+const loggerWarn = vi.spyOn(Logger.prototype, 'warn')
 
 const FIXTURE_DOCUMENT_URI = `file://${FIXTURE_FOLDER}/foo.sh`
 function textToDoc(txt: string) {
   return TextDocument.create(FIXTURE_DOCUMENT_URI, 'bar', 0, txt)
+}
+
+/** Fills the test shfmt configuration with default values */
+function makeShfmtConfig(cfg: Partial<ShfmtConfig>): ShfmtConfig {
+  return {
+    path: cfg.path ?? '',
+    additionalArguments: cfg.additionalArguments ?? [],
+    ignoreEditorconfig: cfg.ignoreEditorconfig ?? false,
+    languageDialect: cfg.languageDialect ?? 'auto',
+    binaryNextLine: cfg.binaryNextLine ?? false,
+    caseIndent: cfg.caseIndent ?? false,
+    funcNextLine: cfg.funcNextLine ?? false,
+    keepPadding: cfg.keepPadding ?? false,
+    simplifyCode: cfg.simplifyCode ?? false,
+    spaceRedirects: cfg.spaceRedirects ?? false,
+  }
 }
 
 async function getFormattingResult({
@@ -24,7 +42,7 @@ async function getFormattingResult({
   document: TextDocument
   executablePath?: string
   formatOptions?: FormattingOptions
-  shfmtConfig?: Record<string, string | boolean>
+  shfmtConfig?: ShfmtConfig
 }): Promise<[Awaited<ReturnType<Formatter['format']>>, Formatter]> {
   const formatter = new Formatter({
     executablePath,
@@ -55,21 +73,21 @@ describe('formatter', () => {
   })
 
   it('should throw when formatting fails', async () => {
-    expect(async () => {
+    await expect(async () => {
       await getFormattingResult({ document: FIXTURE_DOCUMENT.PARSE_PROBLEMS })
     }).rejects.toThrow(
-      /Shfmt: exited with status 1: .*\/testing\/fixtures\/parse-problems.sh:10:1: > must be followed by a word/,
+      /Shfmt: exited with status 1: .*\/testing\/fixtures\/parse-problems.sh:10:1: [`"']?>[`"']? must be followed by a word/,
     )
   })
 
   it('should throw when parsing using the wrong language dialect', async () => {
-    expect(async () => {
+    await expect(async () => {
       await getFormattingResult({
         document: FIXTURE_DOCUMENT.SHFMT,
-        shfmtConfig: { languageDialect: 'posix' },
+        shfmtConfig: makeShfmtConfig({ languageDialect: 'posix' }),
       })
     }).rejects.toThrow(
-      /Shfmt: exited with status 1: .*\/testing\/fixtures\/shfmt\.sh:25:14: (the "function" builtin|a command can only contain words and redirects; encountered \()/,
+      /Shfmt: exited with status 1: .*\/testing\/fixtures\/shfmt\.sh:25:14: (the [`"']?function[`"']? builtin|a command can only contain words and redirects; encountered \()/,
     )
   })
 
@@ -227,7 +245,7 @@ describe('formatter', () => {
     const [result] = await getFormattingResult({
       document: FIXTURE_DOCUMENT.SHFMT,
       formatOptions: { tabSize: 2, insertSpaces: true },
-      shfmtConfig: { binaryNextLine: true },
+      shfmtConfig: makeShfmtConfig({ binaryNextLine: true }),
     })
     expect(result).toMatchInlineSnapshot(`
       [
@@ -279,7 +297,7 @@ describe('formatter', () => {
     const [result] = await getFormattingResult({
       document: FIXTURE_DOCUMENT.SHFMT,
       formatOptions: { tabSize: 2, insertSpaces: true },
-      shfmtConfig: { caseIndent: true },
+      shfmtConfig: makeShfmtConfig({ caseIndent: true }),
     })
     expect(result).toMatchInlineSnapshot(`
       [
@@ -331,7 +349,7 @@ describe('formatter', () => {
     const [result] = await getFormattingResult({
       document: FIXTURE_DOCUMENT.SHFMT,
       formatOptions: { tabSize: 2, insertSpaces: true },
-      shfmtConfig: { funcNextLine: true },
+      shfmtConfig: makeShfmtConfig({ funcNextLine: true }),
     })
     expect(result).toMatchInlineSnapshot(`
       [
@@ -384,7 +402,7 @@ describe('formatter', () => {
     const [result] = await getFormattingResult({
       document: FIXTURE_DOCUMENT.SHFMT,
       formatOptions: { tabSize: 2, insertSpaces: true },
-      shfmtConfig: { keepPadding: true },
+      shfmtConfig: makeShfmtConfig({ keepPadding: true }),
     })
     expect(result).toMatchInlineSnapshot(`
       [
@@ -436,7 +454,7 @@ describe('formatter', () => {
     const [result] = await getFormattingResult({
       document: FIXTURE_DOCUMENT.SHFMT,
       formatOptions: { tabSize: 2, insertSpaces: true },
-      shfmtConfig: { simplifyCode: true },
+      shfmtConfig: makeShfmtConfig({ simplifyCode: true }),
     })
     expect(result).toMatchInlineSnapshot(`
       [
@@ -488,7 +506,7 @@ describe('formatter', () => {
     const [result] = await getFormattingResult({
       document: FIXTURE_DOCUMENT.SHFMT,
       formatOptions: { tabSize: 2, insertSpaces: true },
-      shfmtConfig: { spaceRedirects: true },
+      shfmtConfig: makeShfmtConfig({ spaceRedirects: true }),
     })
     expect(result).toMatchInlineSnapshot(`
       [
@@ -540,14 +558,73 @@ describe('formatter', () => {
     const [result] = await getFormattingResult({
       document: FIXTURE_DOCUMENT.SHFMT,
       formatOptions: { tabSize: 2, insertSpaces: true },
-      shfmtConfig: {
+      shfmtConfig: makeShfmtConfig({
         binaryNextLine: true,
         caseIndent: true,
         funcNextLine: true,
         keepPadding: true,
         simplifyCode: true,
         spaceRedirects: true,
-      },
+      }),
+    })
+    expect(result).toMatchInlineSnapshot(`
+      [
+        {
+          "newText": "#!/bin/bash
+      set -ueo pipefail
+
+      if [ -z "$arg" ]; then
+        echo indent
+      fi
+
+      echo binary \\
+                 && echo next line
+
+      case "$arg" in
+        a)
+          echo case indent
+          ;;
+      esac
+
+      echo one   two   three
+      echo four  five  six
+      echo seven eight nine
+
+      [[ $simplify == "simplify"   ]]
+
+      echo space redirects > /dev/null
+
+      function next()
+                     {
+        echo line
+      }
+      ",
+          "range": {
+            "end": {
+              "character": 2147483647,
+              "line": 2147483647,
+            },
+            "start": {
+              "character": 0,
+              "line": 0,
+            },
+          },
+        },
+      ]
+    `)
+  })
+
+  it('should format with a combination of options and additionalArguments', async () => {
+    const [result] = await getFormattingResult({
+      document: FIXTURE_DOCUMENT.SHFMT,
+      formatOptions: { tabSize: 2, insertSpaces: true },
+      shfmtConfig: makeShfmtConfig({
+        caseIndent: true,
+        keepPadding: true,
+        simplifyCode: true,
+        spaceRedirects: true,
+        additionalArguments: ['--binary-next-line', '--func-next-line'],
+      }),
     })
     expect(result).toMatchInlineSnapshot(`
       [
@@ -607,24 +684,47 @@ describe('formatter', () => {
       FIXTURE_DOCUMENT.PARSE_PROBLEMS.getText(),
     )
 
-    expect(async () => {
+    await expect(async () => {
       await getFormattingResult({ document: testDocument })
     }).rejects.toThrow(
-      /Shfmt: exited with status 1: <standard input>:10:1: > must be followed by a word/,
+      /Shfmt: exited with status 1: <standard input>:10:1: [`"']?>[`"']? must be followed by a word/,
     )
   })
 
   describe('getShfmtArguments()', () => {
-    const lspShfmtConfig = {
+    const lspShfmtConfig = makeShfmtConfig({
       binaryNextLine: true,
       funcNextLine: true,
-      simplifyCode: true,
-    }
+      additionalArguments: ['-s'],
+    })
     const lspShfmtArgs = ['-bn', '-fn', '-s']
     const formatOptions = { tabSize: 2, insertSpaces: true }
 
     const formatter = new Formatter({
       executablePath: 'shfmt',
+    })
+
+    it('preserves additionalArguments across formatting requests', async () => {
+      const shfmtConfig = makeShfmtConfig({ additionalArguments: ['-s'] })
+      const uri = `file://${FIXTURE_FOLDER}/shfmt.sh`
+
+      // @ts-expect-error Testing a private method
+      const firstArgs = await formatter.getShfmtArguments(uri, formatOptions, shfmtConfig)
+      // @ts-expect-error Testing a private method
+      const secondArgs = await formatter.getShfmtArguments(
+        uri,
+        formatOptions,
+        shfmtConfig,
+      )
+
+      expect(shfmtConfig.additionalArguments).toEqual(['-s'])
+      expect(firstArgs).toEqual([
+        '-s',
+        `--filename=${FIXTURE_FOLDER}/shfmt.sh`,
+        '-i=2',
+        '-ln=auto',
+      ])
+      expect(secondArgs).toEqual(firstArgs)
     })
 
     describe('when the document URI is not a filepath', () => {
@@ -642,7 +742,13 @@ describe('formatter', () => {
 
       it('should use language server config', async () => {
         expect(shfmtArgs).toEqual(expect.arrayContaining(lspShfmtArgs))
-        expect(shfmtArgs.length).toEqual(4) // indentation
+        expect(shfmtArgs.length).toEqual(5) // indentation
+      })
+
+      it('should contain additionalArguments', async () => {
+        expect(shfmtArgs).toEqual(
+          expect.arrayContaining(lspShfmtConfig.additionalArguments),
+        )
       })
 
       it('should use indentation config from the editor', () => {
@@ -669,7 +775,13 @@ describe('formatter', () => {
 
       it('should use language server config', () => {
         expect(shfmtArgs).toEqual(expect.arrayContaining(lspShfmtArgs))
-        expect(shfmtArgs.length).toEqual(5) // indentation + filename
+        expect(shfmtArgs.length).toEqual(6) // indentation + filename
+      })
+
+      it('should contain additionalArguments', async () => {
+        expect(shfmtArgs).toEqual(
+          expect.arrayContaining(lspShfmtConfig.additionalArguments),
+        )
       })
 
       it('should use indentation config from the editor', () => {
@@ -696,7 +808,13 @@ describe('formatter', () => {
 
       it('should use language server config', () => {
         expect(shfmtArgs).toEqual(expect.arrayContaining(lspShfmtArgs))
-        expect(shfmtArgs.length).toEqual(5) // indentation + filename
+        expect(shfmtArgs.length).toEqual(6) // indentation + filename
+      })
+
+      it('should contain additionalArguments', async () => {
+        expect(shfmtArgs).toEqual(
+          expect.arrayContaining(lspShfmtConfig.additionalArguments),
+        )
       })
 
       it('should use indentation config from the editor', () => {
@@ -722,7 +840,8 @@ describe('formatter', () => {
       })
 
       it('should use .editorconfig config (even though no options are enabled)', () => {
-        expect(shfmtArgs.length).toEqual(2) // indentation + filename
+        expect(shfmtArgs).toContain('-s') // additionalArguments still apply
+        expect(shfmtArgs.length).toEqual(3) // additionalArguments + indentation + filename
       })
 
       it('should use indentation config from the editor', () => {
@@ -748,8 +867,10 @@ describe('formatter', () => {
       })
 
       it('should use .editorconfig config', () => {
-        expect(shfmtArgs).toEqual(expect.arrayContaining(['-ci', '-sr', "-ln='mksh'"]))
-        expect(shfmtArgs.length).toEqual(5) // indentation + filename
+        expect(shfmtArgs).toEqual(
+          expect.arrayContaining(['-s', '-ci', '-sr', "-ln='mksh'"]),
+        )
+        expect(shfmtArgs.length).toEqual(6) // additionalArguments + indentation + filename
       })
 
       it('should use indentation config from the editor', () => {
@@ -776,7 +897,7 @@ describe('formatter', () => {
 
       it('should use language server config', () => {
         expect(shfmtArgs).toEqual(expect.arrayContaining(lspShfmtArgs))
-        expect(shfmtArgs.length).toEqual(5) // indentation + filename
+        expect(shfmtArgs.length).toEqual(6) // indentation + filename
       })
 
       it('should use indentation config from the editor', () => {

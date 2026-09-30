@@ -14,7 +14,7 @@ echo $BOL
 
 echo "$"
 
-source ./scripts/tag-release.inc
+source ./testing/workspace/tag-release.inc
 
 tagRelease '1.0.0'
 

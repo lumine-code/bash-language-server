@@ -95,7 +95,8 @@ class Formatter {
     ]
   }
   async getShfmtArguments(documentUri, formatOptions, lspShfmtConfig) {
-    const args = []
+    // User-provided additionalArguments should be added before any other arguments
+    const args = [...(lspShfmtConfig?.additionalArguments ?? [])]
     // this is the config that we'll use to build args - default to language server config
     let activeShfmtConfig = { ...lspShfmtConfig }
     // do we have a document stored on the local filesystem?
@@ -189,7 +190,7 @@ class Formatter {
         this._canFormat = false
         return ''
       }
-      throw new Error(`Shfmt: child process error: ${e}`, { cause: e })
+      throw new Error(`Shfmt: child process error: ${String(e)}`)
     }
     if (exit != 0) {
       throw new Error(`Shfmt: exited with status ${exit}: ${err}`)

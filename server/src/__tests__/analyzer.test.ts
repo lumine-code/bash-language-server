@@ -1,5 +1,8 @@
-import { join } from 'node:path'
+import { describe, expect, it, vi } from 'vitest'
 import { pathToFileURL } from 'node:url'
+import { lstatSync } from 'node:fs'
+
+import { Parser } from 'web-tree-sitter'
 
 import {
   FIXTURE_DOCUMENT,
@@ -16,13 +19,21 @@ import { Logger } from '../util/logger'
 
 const CURRENT_URI = 'dummy-uri.sh'
 
+// Git can materialize the broken symlink as a regular file on Windows.
+// If you add a shell fixture, update the matching count too.
+const FIXTURE_FILES_MATCHING_GLOB = lstatSync(
+  `${FIXTURE_FOLDER}broken-symlink.sh`,
+).isSymbolicLink()
+  ? 21
+  : 22
+
 const defaultConfig = getDefaultConfiguration()
 
-jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {
+vi.spyOn(Logger.prototype, 'log').mockImplementation(() => {
   // noop
 })
-const loggerInfo = jest.spyOn(Logger.prototype, 'info')
-const loggerWarn = jest.spyOn(Logger.prototype, 'warn')
+const loggerInfo = vi.spyOn(Logger.prototype, 'info')
+const loggerWarn = vi.spyOn(Logger.prototype, 'warn')
 
 async function getAnalyzer({
   enableSourceErrorDiagnostics = false,
@@ -53,6 +64,21 @@ async function getAnalyzer({
 }
 
 describe('analyze', () => {
+  it('reports a failed parse before analyzing a missing tree', async () => {
+    const analyzer = await getAnalyzer({})
+    const parse = vi.spyOn(Parser.prototype, 'parse').mockReturnValueOnce(null)
+    try {
+      expect(() =>
+        analyzer.analyze({
+          uri: CURRENT_URI,
+          document: FIXTURE_DOCUMENT.INSTALL,
+        }),
+      ).toThrow(`Failed to parse ${CURRENT_URI}: no syntax tree returned`)
+    } finally {
+      parse.mockRestore()
+    }
+  })
+
   it('returns an empty list of diagnostics for a file with no parsing errors', async () => {
     const analyzer = await getAnalyzer({})
     const diagnostics = analyzer.analyze({
@@ -219,7 +245,7 @@ describe('findDeclarationLocations', () => {
     analyzer.analyze({ uri, document })
     const result = analyzer.findDeclarationLocations({
       uri,
-      word: './scripts/tag-release.inc',
+      word: './testing/workspace/tag-release.inc',
       position: { character: 10, line: 16 },
     })
     expect(updateSnapshotUris(result)).toMatchInlineSnapshot(`
@@ -235,7 +261,39 @@ describe('findDeclarationLocations', () => {
               "line": 0,
             },
           },
-          "uri": "file://__REPO_ROOT_FOLDER__/scripts/tag-release.inc",
+          "uri": "file://__REPO_ROOT_FOLDER__/testing/workspace/tag-release.inc",
+        },
+      ]
+    `)
+  })
+
+  it('returns a location in a bats helper file pulled in with `load`', async () => {
+    const analyzer = await getAnalyzer({
+      runBackgroundAnalysis: true,
+      workspaceFolder: FIXTURE_FOLDER,
+    })
+    const document = FIXTURE_DOCUMENT.BATS_SOURCING
+    const { uri } = document
+    analyzer.analyze({ uri, document })
+    const result = analyzer.findDeclarationLocations({
+      uri,
+      word: 'setup_test_env',
+      position: { character: 4, line: 5 },
+    })
+    expect(updateSnapshotUris(result)).toMatchInlineSnapshot(`
+      [
+        {
+          "range": {
+            "end": {
+              "character": 1,
+              "line": 4,
+            },
+            "start": {
+              "character": 0,
+              "line": 2,
+            },
+          },
+          "uri": "file://__REPO_ROOT_FOLDER__/testing/fixtures/bats/test_helper.bash",
         },
       ]
     `)
@@ -373,9 +431,9 @@ describe('findAllSourcedUris', () => {
     const result = analyzer.findAllSourcedUris({ uri: FIXTURE_URI.SOURCING })
     expect(result).toEqual(
       new Set([
-        pathToFileURL(join(REPO_ROOT_FOLDER, 'scripts', 'tag-release.inc')).href,
-        pathToFileURL(join(FIXTURE_FOLDER, 'issue101.sh')).href,
-        pathToFileURL(join(FIXTURE_FOLDER, 'extension.inc')).href,
+        pathToFileURL(`${REPO_ROOT_FOLDER}/testing/workspace/tag-release.inc`).href, // resolved based on repoRootFolder
+        pathToFileURL(`${FIXTURE_FOLDER}issue101.sh`).href, // resolved based on current file
+        pathToFileURL(`${FIXTURE_FOLDER}extension.inc`).href, // resolved based on current file
       ]),
     )
   })
@@ -392,8 +450,8 @@ describe('findAllSourcedUris', () => {
     const result = analyzer.findAllSourcedUris({ uri: FIXTURE_URI.MISSING_EXTENSION })
     expect(result).toEqual(
       new Set([
-        pathToFileURL(join(FIXTURE_FOLDER, 'extension.inc')).href,
-        pathToFileURL(join(FIXTURE_FOLDER, 'issue101.sh')).href,
+        pathToFileURL(`${FIXTURE_FOLDER}extension.inc`).href,
+        pathToFileURL(`${FIXTURE_FOLDER}issue101.sh`).href,
       ]),
     )
   })
@@ -851,7 +909,7 @@ describe('commentsAbove', () => {
 
 describe('initiateBackgroundAnalysis', () => {
   it('finds bash files', async () => {
-    jest.spyOn(Date, 'now').mockImplementation(() => 0)
+    vi.spyOn(Date, 'now').mockImplementation(() => 0)
 
     const analyzer = await getAnalyzer({})
 
@@ -870,9 +928,8 @@ describe('initiateBackgroundAnalysis', () => {
       [expect.stringContaining('sourcing.sh line 26: failed to resolve path')],
     ])
 
-    // The broken-symlink fixture may be included as a regular file on filesystems
-    // that cannot represent symbolic links.
-    expect(filesParsed).toBeGreaterThanOrEqual(20)
+    // Intro, stats on glob, one file skipped due to shebang, and outro
+    expect(filesParsed).toEqual(FIXTURE_FILES_MATCHING_GLOB - 1)
 
     expect(loggerInfo).toHaveBeenNthCalledWith(
       1,
@@ -881,9 +938,9 @@ describe('initiateBackgroundAnalysis', () => {
   })
 
   it('handles glob errors', async () => {
-    jest
-      .spyOn(fsUtil, 'getFilePaths')
-      .mockImplementation(() => Promise.reject(new Error('BOOM')))
+    vi.spyOn(fsUtil, 'getFilePaths').mockImplementation(() =>
+      Promise.reject(new Error('BOOM')),
+    )
 
     const analyzer = await getAnalyzer({})
 
@@ -897,7 +954,7 @@ describe('initiateBackgroundAnalysis', () => {
   })
 
   it('allows skipping the analysis', async () => {
-    jest.spyOn(Date, 'now').mockImplementation(() => 0)
+    vi.spyOn(Date, 'now').mockImplementation(() => 0)
 
     const analyzer = await getAnalyzer({})
 

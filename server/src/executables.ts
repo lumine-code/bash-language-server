@@ -1,5 +1,5 @@
 import * as fs from 'fs'
-import { basename, delimiter, extname, join } from 'node:path'
+import { basename, delimiter, extname, isAbsolute, join } from 'path'
 
 import * as ArrayUtil from './util/array'
 import * as FsUtil from './util/fs'
@@ -15,10 +15,10 @@ export default class Executables {
   }
 
   /**
-   * @param pathValue is expected to use the platform PATH delimiter.
+   * @param path uses the current platform's PATH delimiter.
    */
-  public static fromPath(pathValue: string): Promise<Executables> {
-    const paths = pathValue.split(delimiter)
+  public static fromPath(path: string): Promise<Executables> {
+    const paths = path.split(delimiter)
     const promises = paths.map((x) => findExecutablesInPath(x))
     return Promise.all(promises)
       .then(ArrayUtil.flattenArray)
@@ -39,6 +39,31 @@ export default class Executables {
   public isExecutableOnPATH(executable: string): boolean {
     return this.executables.has(executable)
   }
+
+  /**
+   * Recognize commands invoked by their absolute path as well as names on PATH.
+   */
+  public async isExecutable(executable: string): Promise<boolean> {
+    // Probing UNC or device paths can trigger network authentication on Windows.
+    if (process.platform === 'win32' && /^(?:[\\/]{2}|[\\/]\?\?[\\/])/.test(executable)) {
+      return false
+    }
+
+    if (!isAbsolute(executable)) {
+      return this.isExecutableOnPATH(executable)
+    }
+
+    try {
+      const stats = await fs.promises.stat(executable)
+      if (!stats.isFile()) {
+        return false
+      }
+      await fs.promises.access(executable, fs.constants.X_OK)
+      return true
+    } catch {
+      return false
+    }
+  }
 }
 
 /**
@@ -48,7 +73,7 @@ async function findExecutablesInPath(path: string): Promise<string[]> {
   path = FsUtil.untildify(path)
 
   try {
-    const pathStats = await fs.promises.lstat(path)
+    const pathStats = await fs.promises.stat(path)
 
     if (pathStats.isDirectory()) {
       const childrenPaths = await fs.promises.readdir(path)
@@ -57,11 +82,11 @@ async function findExecutablesInPath(path: string): Promise<string[]> {
 
       for (const childrenPath of childrenPaths) {
         try {
-          const stats = await fs.promises.lstat(join(path, childrenPath))
+          const stats = await fs.promises.stat(join(path, childrenPath))
           if (isExecutableFile(join(path, childrenPath), stats)) {
             files.push(executableName(childrenPath))
           }
-        } catch {
+        } catch (error) {
           // Ignore error
         }
       }
@@ -70,7 +95,7 @@ async function findExecutablesInPath(path: string): Promise<string[]> {
     } else if (isExecutableFile(path, pathStats)) {
       return [executableName(path)]
     }
-  } catch {
+  } catch (error) {
     // Ignore error
   }
 
@@ -81,7 +106,7 @@ function executableExtensions(): Set<string> {
   return new Set(
     (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD')
       .split(';')
-      .map((value) => value.toLowerCase()),
+      .map((extension) => extension.toLowerCase()),
   )
 }
 
@@ -96,10 +121,7 @@ function isExecutableFile(filePath: string, stats: fs.Stats): boolean {
 
 function executableName(filePath: string): string {
   const name = basename(filePath)
-  if (process.platform !== 'win32') {
-    return name
-  }
-
+  if (process.platform !== 'win32') return name
   const extension = extname(name)
   return executableExtensions().has(extension.toLowerCase())
     ? name.slice(0, -extension.length)
